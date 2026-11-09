@@ -30,7 +30,7 @@ Manuais de primeiros socorros, água, energia, alimentos, plantas medicinais, re
 | Espaço livre | 10 GB (pacote Essencial) | 50 GB ou mais |
 | Internet | Só na primeira vez, para baixar | — |
 
-Não precisa instalar nada antes: o Protocolo Zero baixa sozinho o que falta. Depois de configurado, funciona **sem internet**.
+Não precisa instalar nada antes: o Protocolo Zero já abre na primeira vez, e você escolhe lá dentro o que baixar. Depois disso, funciona **sem internet**.
 
 ---
 
@@ -57,18 +57,9 @@ Pronto. Deixe a janela preta aberta enquanto usa: fechar ela fecha o Protocolo Z
 
 ---
 
-## Primeiro uso: configura tudo sozinho
+## Primeiro uso
 
-Na primeira vez aparece a tela **Configurando o Protocolo Zero**, com um carregador mostrando cada passo:
-
-1. **Detectando as configurações do seu computador** (memória, placa de vídeo e espaço livre).
-2. **Escolhendo o melhor modelo de IA** para ele.
-3. **Instalando o motor de IA** (Ollama).
-4. **Baixando o modelo de IA.**
-5. **Baixando a biblioteca essencial** (cerca de 3 GB de livros e manuais).
-6. **Preparando tudo para funcionar sem internet.**
-
-Pode levar de alguns minutos a mais de uma hora, conforme a sua internet. Se a conexão cair ou você fechar, na próxima vez ele continua de onde parou. No fim, clique em **Começar a usar**.
+Na primeira vez, a tela **Configurando o Protocolo Zero** só prepara o programa que faz ele funcionar e logo abre a página inicial. Nada mais é baixado nessa hora.
 
 O **Node.js** (o programa que faz o Protocolo Zero funcionar) já vem junto, para Windows, macOS e Linux, e é preparado sozinho na pasta `runtime`, sem instalar nada no sistema. Se algo der errado, ele é baixado do site oficial; se ainda assim falhar, a própria tela mostra como instalar.
 
@@ -76,7 +67,12 @@ O **Node.js** (o programa que faz o Protocolo Zero funcionar) já vem junto, par
 > `curl -fsSL https://ollama.com/install.sh | sh`
 > No Windows e no macOS, o Protocolo Zero instala sozinho.
 
-Quer mais livros, enciclopédias, cursos e mapas? Depois, abra **Instalar conteúdo** e escolha os pacotes **Padrão** ou **Completo**, ou item por item.
+Na página inicial, escolha o que guardar no computador:
+
+- **Escolher o que instalar** — abre **Instalar conteúdo**: a IA, os pacotes **Essencial**, **Padrão** ou **Completo**, ou item por item (livros, enciclopédias, cursos e mapas).
+- **Instalar o básico sozinho** — escolhe e baixa a IA que roda bem no seu computador e a biblioteca essencial (cerca de 3 GB).
+
+Os downloads continuam enquanto você usa o Protocolo Zero e aparecem em **Transferências**. Se a conexão cair ou você fechar, na próxima vez eles continuam de onde pararam.
 
 ---
 

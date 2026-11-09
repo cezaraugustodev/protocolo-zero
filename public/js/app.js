@@ -196,8 +196,8 @@ async function iniciar() {
   document.getElementById('abrir-menu').addEventListener('click', () => document.getElementById('lateral').classList.toggle('aberta'));
   await atualizarEstado();
   await atualizarTarefas();
-  // Primeira vez: configura tudo sozinho, com a tela "Configurando o Protocolo Zero".
-  if ((!location.hash || location.hash === '#/inicio') && estado.servidor && !estado.servidor.config.configurado) location.hash = '#/primeiro-uso';
+  // Primeira vez: abre direto na página inicial. O usuário escolhe o que instalar (IA, livros, mapas)
+  // em "Instalar conteúdo", ou pede a instalação automática do básico (tela "primeiro-uso").
   window.addEventListener('hashchange', mostrar);
   await mostrar();
   setInterval(atualizarEstado, 6000);

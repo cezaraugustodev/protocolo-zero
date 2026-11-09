@@ -62,9 +62,11 @@ export async function render(raiz, { estado, args = [] }) {
             ? [h('a', { class: 'botao primario grande', href: '#/emergencia' }, icone('play', 18), 'Iniciar Protocolo Zero'),
                h('a', { class: 'botao grande', href: '#/assistente' }, icone('chat', 18), 'Perguntar ao assistente'),
                h('a', { class: 'botao grande', href: '#/configurar' }, icone('baixar', 18), 'Instalar conteúdo')]
-            : [h('a', { class: 'botao primario grande', href: '#/configurar' }, icone('baixar', 18), 'Configurar meu Protocolo Zero'),
-               h('a', { class: 'botao grande', href: '#/emergencia' }, icone('play', 18), 'Iniciar Protocolo Zero'),
-               h('span', { class: 'suave' }, 'Leva 2 minutos. Depois é só esperar os downloads.')])),
+            : [h('a', { class: 'botao primario grande', href: '#/configurar' }, icone('baixar', 18), 'Escolher o que instalar'),
+               h('a', { class: 'botao grande', href: '#/primeiro-uso', title: 'Escolhe e baixa sozinho a IA que roda bem neste computador e a biblioteca essencial (cerca de 3 GB). Pode levar bastante tempo, conforme a internet.' }, icone('ajustes', 18), 'Instalar o básico sozinho'),
+               h('a', { class: 'botao grande', href: '#/emergencia' }, icone('play', 18), 'Iniciar Protocolo Zero')])),
+      configurado ? null : aviso('info', h('b', {}, 'O Protocolo Zero já está aberto e pronto. '),
+        'Agora escolha o que guardar no computador: a IA, livros, enciclopédias e mapas. Os downloads continuam enquanto você usa, e você acompanha em "Transferências".'),
 
       secaoInstalar(catalogo, s),
       painel,

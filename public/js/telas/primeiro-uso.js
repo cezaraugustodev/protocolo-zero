@@ -30,7 +30,7 @@ export async function render(raiz) {
       h('h1', {}, terminou ? (pu.estado === 'erro' && !avisos.length ? 'Algo deu errado' : 'Tudo pronto!') : 'Configurando o Protocolo Zero'),
       h('p', { class: 'suave' }, terminou
         ? 'O Protocolo Zero já funciona sem internet. Você pode baixar mais livros, enciclopédias e mapas quando quiser em "Instalar conteúdo".'
-        : 'Isso só acontece na primeira vez. Pode levar alguns minutos, conforme a sua internet. Pode deixar esta janela aberta e fazer outra coisa.'),
+        : 'Pode levar bastante tempo, conforme a sua internet. Você pode usar outras telas enquanto isso: os downloads continuam e aparecem em "Transferências".'),
 
       !terminou
         ? h('div', { class: 'pu-atual' },
