@@ -26,7 +26,7 @@ export async function obter(id) {
     if (!d || !d.blocos || typeof d.blocos !== 'object') continue;
     const blocos = {};
     for (const [k, v] of Object.entries(d.blocos)) {
-      if (v && typeof v.texto === 'string') blocos[k] = { texto: v.texto, quando: v.quando || null };
+      if (v && typeof v.texto === 'string') blocos[k] = { texto: v.texto, quando: v.quando || null, chave: v.chave || null };
     }
     if (Object.keys(blocos).length) partes[m[1]] = { blocos };
   }
@@ -34,7 +34,7 @@ export async function obter(id) {
 }
 
 /** Grava a tradução de um parágrafo (sobrescreve a anterior). */
-export async function gravarBloco(id, indice, bloco, { texto }) {
+export async function gravarBloco(id, indice, bloco, { texto, chave }) {
   if (!idValido(id)) throw new Error('Documento inválido');
   const n = Number(indice);
   const b = Number(bloco);
@@ -47,6 +47,8 @@ export async function gravarBloco(id, indice, bloco, { texto }) {
   const atual = await lerJSON(arquivo, { blocos: {} });
   const blocos = atual && typeof atual.blocos === 'object' ? atual.blocos : {};
   blocos[String(b)] = { texto: String(texto ?? '').slice(0, 20000), quando: Date.now() };
+  // No PDF, "chave" identifica o trecho original: a tradução só é usada se o trecho for o mesmo.
+  if (typeof chave === 'string' && /^[a-z0-9]{1,24}$/.test(chave)) blocos[String(b)].chave = chave;
   await gravarJSON(arquivo, { blocos, atualizado: Date.now() });
 }
 

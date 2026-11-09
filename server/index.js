@@ -942,9 +942,9 @@ rota('GET', /^\/api\/biblioteca\/([\w.-]+)\/traducao$/, async (req, res, url, m)
 rota('PUT', /^\/api\/biblioteca\/([\w.-]+)\/traducao$/, async (req, res, url, m) => {
   const it = await bib.obter(m[1]);
   if (!it) return erro(res, 404, 'Documento não encontrado');
-  const { indice, bloco, texto } = await lerCorpo(req, 1e5);
+  const { indice, bloco, texto, chave } = await lerCorpo(req, 1e5);
   if (indice == null || bloco == null || typeof texto !== 'string') return erro(res, 400, 'Informe a página, o parágrafo e o texto traduzido');
-  await traducao.gravarBloco(m[1], indice, bloco, { texto });
+  await traducao.gravarBloco(m[1], indice, bloco, { texto, chave });
   json(res, 200, { ok: true });
 });
 rota('DELETE', /^\/api\/biblioteca\/([\w.-]+)\/traducao$/, async (req, res, url, m) => {

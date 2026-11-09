@@ -12,45 +12,130 @@ const DICA_ORIGINAL = 'Clique em um parágrafo traduzido para ver o texto origin
 
 const ROTULO = { pdf: 'PDF', epub: 'Livro digital (EPUB)', texto: 'Texto' };
 
-/** Corta um texto muito longo em pedaços de frase, para traduzir sem perder o sentido. */
-function cortarEmFrases(texto, limite = 900) {
-  const frases = texto.match(/[^.!?]+[.!?]+["”»)]?\s*|[^.!?]+$/g) || [texto];
-  const pedacos = [];
-  let atual = '';
-  for (const f of frases) {
-    const s = f.trim();
-    if (!s) continue;
-    if (atual && atual.length + s.length > limite) {
-      pedacos.push(atual);
-      atual = '';
-    }
-    atual += (atual ? ' ' : '') + s;
-  }
-  if (atual) pedacos.push(atual);
-  return pedacos;
+/** Impressão curta do texto original: a tradução guardada só vale para o mesmo trecho. */
+function impressao(texto) {
+  let h1 = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) h1 = Math.imul(h1 ^ texto.charCodeAt(i), 16777619);
+  return (h1 >>> 0).toString(36) + texto.length.toString(36);
 }
 
-/** Texto extraído de uma página de PDF vira parágrafos clicáveis, um a um. */
-function blocosDeTextoPdf(textoBruto) {
-  const texto = String(textoBruto || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
-  if (!texto) return [];
-  let paragrafos = texto.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  if (paragrafos.length <= 1) {
-    const linhas = texto.split('\n').map((l) => l.trim()).filter(Boolean);
-    paragrafos = [];
-    let atual = '';
-    for (const linha of linhas) {
-      if (atual && atual.length + linha.length > 700) {
-        paragrafos.push(atual);
-        atual = '';
-      }
-      atual += (atual ? ' ' : '') + linha;
+/**
+ * Junta os pedaços de texto de uma página de PDF (pdf.js) em blocos (parágrafos, títulos, legendas),
+ * guardando onde cada bloco fica na página, para a tradução aparecer no mesmo lugar do original.
+ */
+function blocosDaPaginaPdf(conteudo, vp, Util) {
+  const linhas = [];
+  let linha = null;
+  for (const item of conteudo.items) {
+    if (typeof item.str !== 'string') continue;
+    const t = Util.transform(vp.transform, item.transform);
+    const tam = Math.hypot(t[2], t[3]);
+    const horizontal = tam > 0 && Math.abs(t[1]) < tam * 0.05 && Math.abs(t[2]) < tam * 0.05;
+    if (!item.str.trim() || !horizontal) {
+      if (linha) linha.espaco = true;
+      if (item.hasEOL && linha) linha.fim = true;
+      continue;
     }
-    if (atual) paragrafos.push(atual);
-  } else {
-    paragrafos = paragrafos.flatMap((p) => (p.length > 1200 ? cortarEmFrases(p, 900) : [p]));
+    const x = t[4];
+    const base = t[5];
+    const larg = item.width * vp.scale;
+    const nova = !linha || linha.fim || Math.abs(base - linha.base) > tam * 0.5
+      || x < linha.dir - tam * 0.5 || x - linha.dir > tam * 2.5;
+    if (nova) {
+      linha = { esq: x, dir: x + larg, base, tam, texto: item.str };
+      linhas.push(linha);
+    } else {
+      const separa = (linha.espaco || x - linha.dir > tam * 0.15) && !/\s$/.test(linha.texto) && !/^\s/.test(item.str);
+      linha.texto += (separa ? ' ' : '') + item.str;
+      linha.dir = Math.max(linha.dir, x + larg);
+      linha.tam = Math.max(linha.tam, tam);
+    }
+    linha.espaco = false;
+    if (item.hasEOL) linha.fim = true;
   }
-  return paragrafos.map((p) => ({ tipo: 'paragrafo', texto: p }));
+
+  const blocos = [];
+  let b = null;
+  for (const l of linhas) {
+    const texto = l.texto.replace(/\s+/g, ' ').trim();
+    if (!texto) continue;
+    const topo = l.base - l.tam * 0.92;
+    const fundo = l.base + l.tam * 0.28;
+    const ultima = b?.linhas[b.linhas.length - 1];
+    const junta = b && Math.abs(l.tam - b.tam) <= b.tam * 0.2 && topo > ultima.topo
+      && topo - ultima.fundo < b.tam * 0.8 && l.esq < b.dir + b.tam && l.dir > b.esq - b.tam && b.texto.length < 1500;
+    if (!junta) {
+      b = { linhas: [], esq: l.esq, dir: l.dir, topo, fundo, tam: l.tam, texto: '' };
+      blocos.push(b);
+    }
+    // Palavra quebrada com hífen no fim da linha volta a ficar inteira; item de lista começa em linha nova.
+    b.texto = !b.texto ? texto
+      : /^([•●▪◦■□➢►✓✔–—−-]|\d{1,2}[.)]|[a-z][.)])\s/u.test(texto) ? `${b.texto}\n${texto}`
+        : /\p{L}-$/u.test(b.texto) && /^\p{Ll}/u.test(texto) ? b.texto.slice(0, -1) + texto : `${b.texto} ${texto}`;
+    b.linhas.push({ topo, fundo });
+    b.esq = Math.min(b.esq, l.esq);
+    b.dir = Math.max(b.dir, l.dir);
+    b.topo = Math.min(b.topo, topo);
+    b.fundo = Math.max(b.fundo, fundo);
+  }
+
+  const lim = (v) => Math.min(1, Math.max(0, v));
+  return blocos.filter((x) => /\p{L}/u.test(x.texto)).map((x) => {
+    const m = x.tam * 0.12;
+    const esq = lim((x.esq - m) / vp.width);
+    const topo = lim((x.topo - m) / vp.height);
+    return {
+      tipo: 'paragrafo',
+      texto: x.texto,
+      chave: impressao(x.texto),
+      fonte: x.tam / vp.height,
+      caixa: { x: esq, y: topo, w: lim((x.dir + m) / vp.width) - esq, h: lim((x.fundo + m) / vp.height) - topo },
+    };
+  });
+}
+
+/** Cor do fundo em volta do bloco (mediana da borda) e uma cor de letra que dê para ler sobre ela. */
+function coresDoBloco(ctx, largura, altura, caixa) {
+  const x0 = Math.max(0, Math.floor(caixa.x * largura));
+  const y0 = Math.max(0, Math.floor(caixa.y * altura));
+  const w = Math.max(1, Math.min(largura, Math.ceil((caixa.x + caixa.w) * largura)) - x0);
+  const hh = Math.max(1, Math.min(altura, Math.ceil((caixa.y + caixa.h) * altura)) - y0);
+  let px;
+  try {
+    px = ctx.getImageData(x0, y0, w, hh).data;
+  } catch {
+    return { fundo: '#fff', letra: '#111' };
+  }
+  const canais = [[], [], []];
+  const pegar = (x, y) => {
+    const i = (y * w + x) * 4;
+    canais[0].push(px[i]);
+    canais[1].push(px[i + 1]);
+    canais[2].push(px[i + 2]);
+  };
+  const passo = Math.max(1, Math.floor((w + hh) / 200));
+  for (let x = 0; x < w; x += passo) { pegar(x, 0); pegar(x, hh - 1); }
+  for (let y = 0; y < hh; y += passo) { pegar(0, y); pegar(w - 1, y); }
+  const [r, g, bl] = canais.map((c) => c.sort((a, z) => a - z)[c.length >> 1] ?? 255);
+  const luz = (cr, cg, cb) => 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
+  // Cor da letra: média dos pontos de dentro do bloco mais diferentes do fundo (as letras do original).
+  const dentro = [];
+  const passoD = Math.max(1, Math.floor(Math.sqrt((w * hh) / 6000)));
+  for (let y = 0; y < hh; y += passoD) {
+    for (let x = 0; x < w; x += passoD) {
+      const i = (y * w + x) * 4;
+      const d = Math.abs(px[i] - r) + Math.abs(px[i + 1] - g) + Math.abs(px[i + 2] - bl);
+      if (d > 120) dentro.push([d, px[i], px[i + 1], px[i + 2]]);
+    }
+  }
+  let letra = luz(r, g, bl) > 140 ? '#111' : '#f5f5f5';
+  if (dentro.length >= 5) {
+    dentro.sort((a, z) => z[0] - a[0]);
+    const topo = dentro.slice(0, Math.max(5, Math.floor(dentro.length * 0.3)));
+    const m = [1, 2, 3].map((k) => Math.round(topo.reduce((s, p) => s + p[k], 0) / topo.length));
+    if (Math.abs(luz(...m) - luz(r, g, bl)) > 90) letra = `rgb(${m[0]}, ${m[1]}, ${m[2]})`;
+  }
+  return { fundo: `rgb(${r}, ${g}, ${bl})`, letra };
 }
 
 export async function render(raiz, { args = [] } = {}) {
@@ -92,7 +177,7 @@ export async function render(raiz, { args = [] } = {}) {
     const blocos = dados?.blocos || {};
     for (const [bi, t] of Object.entries(blocos)) {
       if (!t?.texto) continue;
-      (traducoes[parte] ||= {})[bi] = { texto: t.texto, quando: t.quando || null };
+      (traducoes[parte] ||= {})[bi] = { texto: t.texto, quando: t.quando || null, chave: t.chave || null };
     }
   }
 
@@ -109,8 +194,10 @@ export async function render(raiz, { args = [] } = {}) {
   let destruirDoc = () => {};
   let reajustarVisual = () => {};
   let ir = async () => {};
-  let textoDaPagina = async () => '';
+  let blocosDaPagina = async () => [];
   let renderizarCanvas = async () => {};
+  let desenharTraducaoPdf = async () => {};
+  let ajustarBloco = () => {};
 
   // ----- topo -----
   const topo = h('div', { class: 'doc-topo' },
@@ -156,13 +243,19 @@ export async function render(raiz, { args = [] } = {}) {
   window.addEventListener('keydown', aoTecla);
 
   // ----- traduções -----
-  async function salvarBloco(parte, bloco, texto) {
+  async function salvarBloco(parte, bloco, texto, chave) {
     try {
-      await api.put(`/api/biblioteca/${encodeURIComponent(id)}/traducao`, { indice: parte, bloco, texto });
+      await api.put(`/api/biblioteca/${encodeURIComponent(id)}/traducao`, { indice: parte, bloco, texto, chave });
     } catch {}
   }
 
-  const traducaoDe = (parte, bloco) => traducoes[String(parte)]?.[String(bloco)]?.texto || '';
+  // No PDF a tradução só vale se o trecho original for o mesmo (a mesma "chave").
+  const traducaoDe = (parte, bloco) => {
+    const t = traducoes[String(parte)]?.[String(bloco)];
+    if (!t?.texto) return '';
+    if (it.tipo === 'pdf' && t.chave !== blocosCache.get(parte)?.[bloco]?.chave) return '';
+    return t.texto;
+  };
 
   function podeMostrarTraducao(parte, bloco) {
     const texto = traducaoDe(parte, bloco);
@@ -174,12 +267,15 @@ export async function render(raiz, { args = [] } = {}) {
   function atualizarBlocoEl(parte, bloco, dados, el) {
     const texto = traducaoDe(parte, bloco);
     const mostrando = texto && podeMostrarTraducao(parte, bloco);
-    el.textContent = mostrando ? texto : dados.texto;
+    // No PDF o bloco fica por cima da página: sem tradução à mostra, fica vazio e a página aparece.
+    const sobrePagina = el.classList.contains('doc-sobre-bloco');
+    el.textContent = mostrando ? texto : sobrePagina ? '' : dados.texto;
     el.classList.toggle('traduzido', !!mostrando);
     el.classList.toggle('tem-traducao', !!texto);
     el.classList.remove('traduzindo');
     if (texto) el.title = mostrando ? 'Clique para ver o texto original' : 'Clique para ver a tradução';
     else el.removeAttribute('title');
+    ajustarBloco(el);
   }
 
   function alternarBloco(parte, bloco, dados, el) {
@@ -202,14 +298,12 @@ export async function render(raiz, { args = [] } = {}) {
   function atualizarBotoesModo() {
     btnOriginal.classList.toggle('ativo', !modoTraduzido);
     btnTraduzido.classList.toggle('ativo', modoTraduzido);
-    if (caixaCanvas) caixaCanvas.hidden = modoTraduzido;
-    caixaTexto.hidden = !!caixaCanvas && !modoTraduzido;
     avisoTrad.hidden = !modoTraduzido;
   }
 
   async function traduzirBloco(parte, bloco, sinal) {
-    if (traducaoDe(parte, bloco)) return;
     const blocos = await obterBlocos(parte);
+    if (traducaoDe(parte, bloco)) return;
     const dados = blocos[bloco];
     if (!dados || dados.tipo === 'imagem' || !dados.texto?.trim()) return;
     const chave = `${parte}:${bloco}`;
@@ -228,12 +322,13 @@ export async function render(raiz, { args = [] } = {}) {
           if (alvo) {
             alvo.el.textContent = parcial;
             alvo.el.classList.add('traduzindo', 'tem-traducao');
+            ajustarBloco(alvo.el);
           }
         },
       });
       if (!texto) return;
-      (traducoes[String(parte)] ||= {})[String(bloco)] = { texto, quando: Date.now() };
-      await salvarBloco(parte, bloco, texto);
+      (traducoes[String(parte)] ||= {})[String(bloco)] = { texto, quando: Date.now(), chave: dados.chave || null };
+      await salvarBloco(parte, bloco, texto, dados.chave);
     } catch (e) {
       atualizarNaTela();
       throw e;
@@ -359,7 +454,7 @@ export async function render(raiz, { args = [] } = {}) {
   async function obterBlocos(parte) {
     if (blocosCache.has(parte)) return blocosCache.get(parte);
     let blocos;
-    if (it.tipo === 'pdf') blocos = blocosDeTextoPdf(await textoDaPagina(parte));
+    if (it.tipo === 'pdf') blocos = await blocosDaPagina(parte);
     else blocos = partes[parte - 1]?.blocos || [];
     blocosCache.set(parte, blocos);
     return blocos;
@@ -370,14 +465,8 @@ export async function render(raiz, { args = [] } = {}) {
     if (parte !== indice) return;
     elementos.clear();
     conteudo.replaceChildren();
-    if (it.tipo === 'pdf') {
-      conteudo.append(h('small', { class: 'suave doc-nota-pdf' },
-        'Texto traduzido desta página, em leitura corrida. Use "Original" para ver a página como no PDF.'));
-    }
     if (!blocos.length) {
-      conteudo.append(aviso('info', it.tipo === 'pdf'
-        ? 'Esta página não tem texto (pode ser escaneada como imagem). Use "Original" para ver a página.'
-        : 'Este trecho não tem texto para mostrar.'));
+      conteudo.append(aviso('info', 'Este trecho não tem texto para mostrar.'));
       return;
     }
     blocos.forEach((dados, bloco) => {
@@ -400,14 +489,12 @@ export async function render(raiz, { args = [] } = {}) {
   }
 
   async function mostrarParte() {
-    if (it.tipo === 'pdf' && !modoTraduzido) {
-      if (caixaCanvas) caixaCanvas.hidden = false;
-      caixaTexto.hidden = true;
+    // PDF: a página continua desenhada como no arquivo; a tradução aparece por cima, no lugar do texto original.
+    if (it.tipo === 'pdf') {
       await renderizarCanvas(indice);
+      await desenharTraducaoPdf(indice);
       return;
     }
-    if (caixaCanvas) caixaCanvas.hidden = true;
-    caixaTexto.hidden = false;
     await renderizarTexto(indice);
   }
 
@@ -463,26 +550,69 @@ export async function render(raiz, { args = [] } = {}) {
     total = doc.numPages;
 
     const canvas = h('canvas', { class: 'doc-pagina', role: 'img', 'aria-label': `Página ${indice} de ${total}` });
-    caixaCanvas = h('div', { class: 'doc-pagina-caixa' }, canvas);
-    visual.replaceChildren(caixaCanvas, caixaTexto);
-    caixaCanvas.hidden = modoTraduzido;
-    caixaTexto.hidden = !modoTraduzido;
+    // Camada por cima da página: cada bloco traduzido cobre o texto original, no mesmo lugar e com a mesma cor de fundo.
+    const sobre = h('div', { class: 'doc-sobre' });
+    const folha = h('div', { class: 'doc-folha' }, canvas, sobre);
+    const avisoPagina = h('div', { class: 'aviso info', hidden: true },
+      'Esta página não tem texto (pode ter sido escaneada como imagem), por isso não dá para traduzir.');
+    caixaCanvas = h('div', { class: 'doc-pagina-caixa' }, folha);
+    visual.replaceChildren(avisoPagina, caixaCanvas);
 
-    const textos = new Map();
     let renderAtual = null;
     let zoom = 1;
 
-    async function textoDaPaginaLocal(n) {
-      if (textos.has(n)) return textos.get(n);
+    blocosDaPagina = async (n) => {
       const pagina = await doc.getPage(n);
-      const c = await pagina.getTextContent();
-      let texto = '';
-      for (const item of c.items) texto += item.str + (item.hasEOL ? '\n' : ' ');
-      texto = texto.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
-      textos.set(n, texto);
-      return texto;
+      return blocosDaPaginaPdf(await pagina.getTextContent(), pagina.getViewport({ scale: 1 }), pdfjs.Util);
+    };
+
+    // Diminui a letra até a tradução caber no espaço do texto original.
+    ajustarBloco = (el) => {
+      if (!el.classList.contains('doc-sobre-bloco')) return;
+      if (!el.textContent) {
+        el.style.fontSize = '';
+        return;
+      }
+      let tam = Math.max(7, (Number(el.dataset.fonte) || 0.015) * canvas.clientHeight);
+      el.style.fontSize = `${tam}px`;
+      for (let i = 0; i < 40 && el.scrollHeight > el.clientHeight + 1 && tam > 5; i++) {
+        tam *= 0.92;
+        el.style.fontSize = `${tam}px`;
+      }
+    };
+
+    desenharTraducaoPdf = async (n) => {
+      const blocos = await obterBlocos(n);
+      if (n !== indice) return;
+      elementos.clear();
+      sobre.replaceChildren();
+      avisoPagina.hidden = !(modoTraduzido && !blocos.length);
+      blocos.forEach((dados, bloco) => {
+        const c = dados.caixa;
+        const el = h('div', {
+          class: 'doc-sobre-bloco',
+          'data-fonte': String(dados.fonte),
+          style: { left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` },
+        });
+        el.addEventListener('click', () => alternarBloco(n, bloco, dados, el));
+        elementos.set(`${n}:${bloco}`, { el, dados });
+        sobre.append(el);
+        atualizarBlocoEl(n, bloco, dados, el);
+      });
+      if (paginaPronta === n) pintarCores(n);
+    };
+
+    // As cores vêm da página desenhada: só dá para ler depois que o desenho termina.
+    let paginaPronta = 0;
+    function pintarCores(n) {
+      const ctx = canvas.getContext('2d');
+      for (const [chave, { el, dados }] of elementos) {
+        if (!chave.startsWith(`${n}:`)) continue;
+        dados.cor ||= coresDoBloco(ctx, canvas.width, canvas.height, dados.caixa);
+        el.style.setProperty('--fundo', dados.cor.fundo);
+        el.style.setProperty('--letra', dados.cor.letra);
+      }
     }
-    textoDaPagina = textoDaPaginaLocal;
 
     async function renderizarCanvasLocal(n) {
       const pagina = await doc.getPage(n);
@@ -498,12 +628,18 @@ export async function render(raiz, { args = [] } = {}) {
       try {
         renderAtual?.cancel();
       } catch {}
-      renderAtual = pagina.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+      paginaPronta = 0;
+      const desenho = pagina.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+      renderAtual = desenho;
       try {
-        await renderAtual.promise;
+        await desenho.promise;
       } catch (e) {
         if (e?.name !== 'RenderingCancelledException') throw e;
+        return;
       }
+      if (renderAtual !== desenho || n !== indice) return;
+      paginaPronta = n;
+      pintarCores(n);
     }
     renderizarCanvas = renderizarCanvasLocal;
 
@@ -518,7 +654,7 @@ export async function render(raiz, { args = [] } = {}) {
     async function mudarZoom(d) {
       zoom = Math.min(3, Math.max(0.5, Number((zoom + d).toFixed(2))));
       nivelZoom.textContent = `${Math.round(zoom * 100)}%`;
-      if (!modoTraduzido) await renderizarCanvas(indice);
+      await mostrarParte();
     }
 
     ferramentas.replaceChildren(
@@ -542,7 +678,7 @@ export async function render(raiz, { args = [] } = {}) {
     reajustarVisual = () => {
       clearTimeout(esperaResize);
       esperaResize = setTimeout(() => {
-        if (!modoTraduzido) renderizarCanvas(indice).catch(() => {});
+        mostrarParte().catch(() => {});
       }, 250);
     };
     window.addEventListener('resize', reajustarVisual);

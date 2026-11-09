@@ -1,4 +1,6 @@
 /* Protocolo Zero — visual "manual de campo": papel, tinta, brasa e musgo. */
+/* O atributo hidden sempre esconde (classes como .botao e .aviso não podem desfazer isso). */
+[hidden] { display: none !important; }
 :root {
   --fundo: #f3efe6;
   --superficie: #fffdf8;
@@ -372,7 +374,15 @@ mark { background: var(--alerta-suave); color: inherit; padding: 0 2px; border-r
 .doc-bloco.tem-traducao:hover { background: var(--brasa-suave); box-shadow: 0 0 0 4px var(--brasa-suave); }
 .doc-bloco.traduzido { color: var(--tinta); }
 .doc-bloco.traduzindo { color: var(--suave); }
-.doc-nota-pdf { display: block; margin-bottom: 16px; font-family: var(--sans); }
+/* PDF traduzido: a tradução cobre o texto original no mesmo lugar da página (clique = ver o original). */
+.doc-folha { position: relative; max-width: 100%; }
+.doc-sobre { position: absolute; inset: 0; pointer-events: none; }
+.doc-sobre-bloco { position: absolute; box-sizing: border-box; overflow: hidden; padding: 0 1px; border-radius: 2px;
+  font-family: var(--sans); line-height: 1.15; overflow-wrap: break-word; white-space: pre-line; color: transparent; }
+.doc-sobre-bloco.tem-traducao { pointer-events: auto; cursor: pointer; }
+.doc-sobre-bloco.tem-traducao:hover { outline: 2px solid var(--brasa); outline-offset: 1px; }
+.doc-sobre-bloco.traduzido, .doc-sobre-bloco.traduzindo { background: var(--fundo, #fff); color: var(--letra, #111); }
+.doc-sobre-bloco.traduzindo { box-shadow: inset 0 -2px 0 var(--brasa); }
 .doc-imagem { display: block; max-width: 100%; height: auto; margin: 1.2em auto; border-radius: 6px; }
 .doc-aviso-traducao { font-size: 12px; padding: 8px 10px; }
 .doc-aviso-traducao[hidden] { display: none; }
