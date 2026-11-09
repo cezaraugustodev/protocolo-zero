@@ -71,8 +71,16 @@ try {
   Write-Host "  Node.js $versao pronto."
 } catch {
   $codigo = 1
-  Write-Host "  Nao foi possivel preparar o Node.js: $($_.Exception.Message)"
-  try { Estado 'falhou' } catch {}
+  $msg = $_.Exception.Message
+  Write-Host "  Nao foi possivel preparar o Node.js: $msg"
+  # Arquivo bloqueado, node.exe sumido do pacote ou que nao abre: quase sempre e o antivirus.
+  $antivirus = ($_.Exception -is [System.UnauthorizedAccessException]) -or ($msg -match 'negado|denied|sendo usado|being used|bloque|blocked|virus|nao encontrado|nao abriu')
+  if ($antivirus) {
+    Write-Host '  Provavel bloqueio do antivirus. Veja como resolver na tela "Configurando".'
+    try { Estado 'antivirus' } catch {}
+  } else {
+    try { Estado 'falhou' } catch {}
+  }
 } finally {
   Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

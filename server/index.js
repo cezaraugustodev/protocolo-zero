@@ -17,7 +17,7 @@ import { confiancaDe, ORDEM as ORDEM_CONFIANCA, ROTULO as ROTULO_CONFIANCA } fro
 import * as arquivoInternet from './arquivoInternet.js';
 import { indexarDocumento, vetorizarPendentes, pendentesVetorizacao, estatisticasIndice, documentosIndexados, buscar, textoDoDocumento } from './indice.js';
 import { estimarMapa, extrairMapa, listarMapas } from './mapas.js';
-import { iniciarProtocoloZero, relatorioAtual, cancelarInicio, iniciando, contextoDiagnostico, explicarSemIA, atualizarPassoBusca } from './iniciar.js';
+import { iniciarProtocoloZero, relatorioAtual, cancelarInicio, iniciando, contextoDiagnostico, explicarSemIA, atualizarPassoBusca, AVISO_ANTIVIRUS_INICIALIZACAO } from './iniciar.js';
 import { avaliarIA, registrarVelocidade, parametrosB, PARAMS_CONFIAVEL, perfisIA, suportaRaciocinio, semTag } from './inteligencia.js';
 import { errosRecentes, registrarErro } from './util.js';
 import * as pacotes from './pacotes.js';
@@ -758,7 +758,13 @@ rota('PUT', /^\/api\/auto$/, async (req, res) => {
     if (ativo !== undefined) await auto.registrar(!!novo.ativo, 'atualizar');
     if (abrirAoLigar !== undefined) await auto.registrar(!!abrirAoLigar, 'abrir');
   } catch (e) {
+    registrarErro('auto/registrar', e);
+    if (PLATAFORMA === 'win32') return erro(res, 500, `Não foi possível criar o atalho que abre o Protocolo Zero ao ligar o computador. ${AVISO_ANTIVIRUS_INICIALIZACAO}`);
     return erro(res, 500, `Não foi possível mudar o que acontece ao ligar o computador: ${e.message}`);
+  }
+  // O atalho foi criado, mas sumiu logo em seguida: o antivírus apagou.
+  if (PLATAFORMA === 'win32' && ((ativo && !(await auto.registrado('atualizar'))) || (abrirAoLigar && !(await auto.registrado('abrir'))))) {
+    return erro(res, 500, `O atalho que abre o Protocolo Zero ao ligar o computador foi apagado logo depois de criado. ${AVISO_ANTIVIRUS_INICIALIZACAO}`);
   }
   await salvarConfig({
     autoAtualizar: { ativo: !!novo.ativo, modelos: !!novo.modelos },
@@ -786,7 +792,7 @@ rota('GET', /^\/api\/erros$/, async (req, res) => json(res, 200, await errosRece
 const SISTEMA_SUPORTE = `Você é o técnico de suporte do Protocolo Zero, um programa offline que roda no computador do usuário.
 O usuário NÃO é técnico. Reescreva as ORIENTAÇÕES OFICIAIS abaixo de forma mais clara e acolhedora, em português do Brasil, em no máximo 8 linhas.
 REGRAS: use SOMENTE as orientações oficiais; não acrescente passos novos; não cite programas, menus ou botões que não estejam nelas;
-nunca sugira desativar o antivírus, apagar arquivos ou rodar comandos. Se algo não estiver claro, diga para clicar em "Verificar de novo".`;
+nunca sugira apagar arquivos ou rodar comandos; só fale do antivírus se as orientações oficiais falarem dele, e do mesmo jeito (inclusive religar depois). Se algo não estiver claro, diga para clicar em "Verificar de novo".`;
 
 function orientacaoFixa(problemas) {
   if (!problemas.length) return 'Nenhum problema encontrado na última verificação. Está tudo pronto para usar.';
@@ -1577,9 +1583,11 @@ const relogiosProcura = [];
 
 /**
  * Troca este processo por um novo, com a versão do programa que acabou de ser instalada.
- * Fecha o servidor e o leitor de enciclopédias, inicia o novo processo na mesma janela e fica só
- * esperando ele terminar (assim a janela preta e o "Iniciar Protocolo Zero" continuam iguais).
+ * O primeiro processo (o que a janela preta abriu) fica só cuidando dos reinícios: inicia o novo
+ * processo na mesma janela e, se ele pedir para reiniciar de novo (código 75), inicia outro.
+ * Assim nunca se acumulam processos parados, e a janela preta continua igual.
  */
+const CODIGO_REINICIAR = 75;
 async function reiniciarProcesso() {
   console.log('\n  Reiniciando o Protocolo Zero com a versão nova…\n');
   for (const r of relogiosProcura) clearTimeout(r);
@@ -1589,13 +1597,18 @@ async function reiniciarProcesso() {
     servidorHttp.closeAllConnections?.();
   });
   fs.rmSync(ARQ_INSTANCIA, { force: true });
+  // Já é um processo reiniciado: o primeiro processo inicia o próximo.
+  if (process.env.PZ_REINICIADO === '1') process.exit(CODIGO_REINICIAR);
   const args = [...process.execArgv, ...process.argv.slice(1).filter((a) => a !== '--sem-navegador'), '--sem-navegador'];
-  const filho = spawn(process.execPath, args, { cwd: RAIZ, stdio: 'inherit', env: process.env });
-  filho.on('exit', (codigo) => process.exit(codigo ?? 0));
-  filho.on('error', (e) => {
-    console.error('  Não foi possível reiniciar:', e.message);
-    process.exit(1);
-  });
+  const iniciar = () => {
+    const filho = spawn(process.execPath, args, { cwd: RAIZ, stdio: 'inherit', env: { ...process.env, PZ_REINICIADO: '1' } });
+    filho.on('exit', (codigo) => (codigo === CODIGO_REINICIAR ? iniciar() : process.exit(codigo ?? 0)));
+    filho.on('error', (e) => {
+      console.error('  Não foi possível reiniciar:', e.message);
+      process.exit(1);
+    });
+  };
+  iniciar();
 }
 
 async function principal() {

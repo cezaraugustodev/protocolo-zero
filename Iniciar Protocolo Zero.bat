@@ -37,9 +37,19 @@ if errorlevel 1 pause
 exit /b
 
 :falhou
+findstr /c:"antivirus" "runtime\estado.js" >nul 2>&1 && goto antivirus
 >"runtime\estado.js" echo window.PZ_ESTADO = { etapa: 'falhou' };
 echo.
 echo  Nao foi possivel preparar o Node.js. Veja as instrucoes na tela "Configurando".
 echo  Resumo: instale a versao LTS de https://nodejs.org e abra o Protocolo Zero de novo.
+echo.
+pause
+exit /b
+
+:antivirus
+echo.
+echo  Provavel bloqueio do antivirus: ele impediu a preparacao do Node.js.
+echo  Adicione esta pasta como excecao no antivirus (ou desative-o por alguns minutos),
+echo  abra o Protocolo Zero de novo e, se desativou, ligue o antivirus de novo depois.
 echo.
 pause

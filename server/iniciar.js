@@ -6,7 +6,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { DADOS, PASTAS, PLATAFORMA, garantirPastas, existe, errosRecentes, registrarErro } from './util.js';
+import { RAIZ, DADOS, PASTAS, PLATAFORMA, garantirPastas, existe, errosRecentes, registrarErro } from './util.js';
 import { espacoEmDisco, detectarHardware } from './hardware.js';
 import { carregarCatalogo } from './catalogo.js';
 import { vendorInstalado, caminhoKiwixServe, ligarOllama, ollamaInstalado } from './ferramentas.js';
@@ -60,6 +60,13 @@ const ACAO_ATUALIZAR = { tipo: 'atualizar', rotulo: 'Atualizar pela internet' };
 /** Resultado de passo para algo que só se resolve baixando (o Iniciar nunca usa a internet). */
 const precisaInternet = (mensagem, detalhes) => ({ estado: 'aviso', mensagem, acao: ACAO_ATUALIZAR, ...(detalhes ? { detalhes } : {}) });
 
+// Arquivo bloqueado (EPERM/EBUSY) mesmo depois de várias tentativas: quase sempre é o antivírus.
+// Texto fixo e revisado (a IA nunca sugere mexer no antivírus por conta própria).
+const RESOLVER_ANTIVIRUS = (tentar) => `Para resolver: 1) No antivírus, adicione a pasta do Protocolo Zero como exceção (${RAIZ}), ou desative o antivírus só por alguns minutos. 2) ${tentar} 3) Se desativou, ligue o antivírus de novo assim que terminar.`;
+const AVISO_ANTIVIRUS = `Provável bloqueio do antivírus. O antivírus confere cada arquivo novo antes de liberar, e o Protocolo Zero grava milhares de arquivos ao descompactar: enquanto confere, o antivírus prende o arquivo e o Protocolo Zero não consegue terminar. Não é vírus. ${RESOLVER_ANTIVIRUS('Tente de novo.')}`;
+/** Atalho de "ao ligar o computador" bloqueado ou apagado (Windows). */
+export const AVISO_ANTIVIRUS_INICIALIZACAO = `Provável bloqueio do antivírus. Alguns antivírus impedem ou apagam atalhos novos que abrem programas ao ligar o computador, por segurança, mesmo de programas confiáveis. Não é vírus. ${RESOLVER_ANTIVIRUS('Desmarque e marque esta opção de novo.')}`;
+
 /** Traduz erros técnicos em explicações simples (funciona mesmo sem IA). */
 export function explicarSemIA(msg = '') {
   const m = String(msg);
@@ -69,8 +76,7 @@ export function explicarSemIA(msg = '') {
     return 'A conexão ficou parada por muito tempo. Pode ser internet lenta ou o servidor de origem sobrecarregado. Tente de novo mais tarde; o download continua de onde parou.';
   if (/ENOSPC|no space/i.test(m)) return 'O disco está cheio. Libere espaço (ou escolha menos conteúdo) e tente de novo.';
   if (/corrompido|Z_DATA_ERROR|incompleto/i.test(m)) return 'Um pacote baixado está danificado. Use "Atualizar" para baixá-lo de novo; o resto continua funcionando.';
-  if (/EACCES|EPERM|EBUSY|operation not permitted|access is denied/i.test(m))
-    return 'O sistema bloqueou o acesso a um arquivo. Feche programas que possam estar usando a pasta "dados" e verifique se o antivírus não está bloqueando o Protocolo Zero.';
+  if (/EACCES|EPERM|EBUSY|operation not permitted|access is denied/i.test(m)) return AVISO_ANTIVIRUS;
   if (/HTTP 404|HTTP 410|página em vez do arquivo|link pode ter mudado/i.test(m))
     return 'O arquivo mudou de endereço na internet. Tente "Atualizar" mais tarde ou remova este item da seleção.';
   if (/HTTP 5\d\d|HTTP 429/i.test(m)) return 'O site de origem está com problemas no momento. Tente de novo mais tarde.';

@@ -119,6 +119,9 @@ export async function render(raiz, { estado }) {
   }
 
   // ---- atualizações e inicialização (ao ligar o computador) ----
+  // Windows: atalho de inicialização apagado — quase sempre o antivírus.
+  const AVISO_ATALHO = 'Provável bloqueio do antivírus: alguns antivírus apagam atalhos que abrem programas ao ligar o computador, por segurança, mesmo de programas confiáveis. Não é vírus. Para resolver: 1) No antivírus, adicione a pasta do Protocolo Zero como exceção, ou desative o antivírus só por alguns minutos. 2) Desmarque e marque esta opção de novo. 3) Se desativou, ligue o antivírus de novo.';
+
   function cartaoAuto(au, plataforma) {
     const sistema = plataforma === 'win32' ? 'o Windows' : plataforma === 'darwin' ? 'o Mac' : 'o computador';
     const titulo = h('div', { class: 'linha' }, h('span', { class: 'icone-bolha musgo' }, icone('atualizar')), h('h3', { style: { margin: 0 } }, 'Atualizações e inicialização'));
@@ -178,8 +181,8 @@ export async function render(raiz, { estado }) {
         (v, c) => salvar({ abrirAoLigar: v }, c, v ? `Pronto: o Protocolo Zero abre ao ligar ${sistema}.` : 'Não abre mais ao ligar.')),
 
       aviso('ok', h('b', {}, 'O que você já tem fica no computador: '), 'a atualização só acrescenta. Nada do que já foi baixado é apagado, trocado ou baixado de novo, nem quando a fonte ou o link deixa de existir. Os arquivos que você enviou, suas anotações, a emergência marcada e as conversas também nunca são alterados.'),
-      au.ativo && !au.registrado ? aviso('erro', `A busca automática está marcada, mas ${sistema} não está configurado para abri-la. Desmarque e marque de novo.`) : null,
-      au.abrirAoLigar && !au.abrirRegistrado ? aviso('erro', `"Abrir ao ligar" está marcado, mas ${sistema} não está configurado para isso. Desmarque e marque de novo.`) : null,
+      au.ativo && !au.registrado ? aviso('erro', `A busca automática está marcada, mas o atalho que a abre ao ligar ${sistema} sumiu.${plataforma === 'win32' ? ` ${AVISO_ATALHO}` : ' Desmarque e marque de novo.'}`) : null,
+      au.abrirAoLigar && !au.abrirRegistrado ? aviso('erro', `"Abrir ao ligar" está marcado, mas o atalho que abre o Protocolo Zero ao ligar ${sistema} sumiu.${plataforma === 'win32' ? ` ${AVISO_ATALHO}` : ' Desmarque e marque de novo.'}`) : null,
       (au.ativo || au.abrirAoLigar) && au.removivel ? aviso('', 'O Protocolo Zero está num pendrive ou HD externo. Ao ligar o computador, ele só abre se o disco estiver conectado.') : null,
       !au.fonte ? h('small', { class: 'suave' }, 'Esta cópia ainda não tem o endereço do catálogo publicado, então ainda não há onde procurar fontes novas.') : null,
       ultimo,

@@ -26,6 +26,11 @@
   #ajuda ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
   code { background: var(--fundo); border: 1px solid var(--linha); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
   .falhou #ajuda { display: grid; }
+  #ajuda-antivirus { display: none; text-align: left; justify-items: stretch; }
+  #ajuda-antivirus h2 { margin: 0; font-size: 19px; color: var(--erro); }
+  #ajuda-antivirus ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+  .antivirus #ajuda-antivirus { display: grid; }
+  .antivirus #andamento { display: none; }
   .falhou #andamento { display: none; }
 </style>
 </head>
@@ -37,6 +42,15 @@
     <div class="loader" aria-hidden="true"></div>
     <b id="passo">Preparando os componentes do Protocolo Zero…</b>
     <small id="detalhe">Acompanhe também na janela preta. Não feche ela.</small>
+  </div>
+  <div class="cartao" id="ajuda-antivirus" role="alert">
+    <h2>Provável bloqueio do antivírus</h2>
+    <p>O antivírus confere cada programa novo antes de deixar usar. Às vezes ele bloqueia o <b>Node.js</b>, o programa que faz o Protocolo Zero funcionar, por ser novo no computador. Não é vírus: ele é gratuito e vem do site oficial (nodejs.org).</p>
+    <ol>
+      <li>No antivírus, adicione a pasta do Protocolo Zero como <b>exceção</b>, ou desative o antivírus só por alguns minutos.</li>
+      <li>Feche a janela preta e abra <b>Iniciar Protocolo Zero</b> de novo.</li>
+      <li>Se desativou, <b>ligue o antivírus de novo</b> assim que o Protocolo Zero abrir.</li>
+    </ol>
   </div>
   <div class="cartao" id="ajuda" role="alert">
     <h2>Não foi possível preparar o programa que faz o Protocolo Zero funcionar</h2>
@@ -68,6 +82,11 @@
   document.getElementById('passos-ajuda').innerHTML = AJUDA[so].map(function (t) { return '<li>' + t + '</li>'; }).join('');
 
   function mostrar(etapa) {
+    if (etapa === 'antivirus') {
+      document.body.classList.add('antivirus');
+      document.getElementById('rodape').style.display = 'none';
+      return;
+    }
     if (etapa === 'falhou') {
       document.body.classList.add('falhou');
       document.getElementById('rodape').style.display = 'none';
