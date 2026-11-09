@@ -26,7 +26,7 @@ import * as leitura from './leitura.js';
 import { obterTile, estimarArea, baixarArea, validarArea, usoSatelite, SATELITE } from './satelite.js';
 import { PORTA_KIWIX } from './kiwix.js';
 import { perfilEnergia } from './energia.js';
-import { verificarAtualizacoes, resumoAtualizacoes, atualizarProtocoloZero, relatorioAtualizacao, cancelarAtualizacao, atualizando, temInternet } from './atualizar.js';
+import { verificarAtualizacoes, resumoAtualizacoes, atualizarProtocoloZero, relatorioAtualizacao, cancelarAtualizacao, atualizando, temInternet, precisaReiniciar } from './atualizar.js';
 import * as auto from './autoatualizar.js';
 import { atualizarCatalogo, escolherNovos, idsNovidades, fonteCatalogo } from './novidades.js';
 import { emergenciaPorId } from '../public/js/emergencias-dados.js';
@@ -583,6 +583,7 @@ rota('GET', /^\/api\/estado$/, async (req, res) => {
     config, ollama, disco, indice, mapas, plataforma: PLATAFORMA, pastaDados: DADOS,
     kiwix: { instalado: kiwixBin, ativo: kiwixAtivo(), url: urlKiwix(), livros: livrosKiwix() },
     atualizacoes: resumoAtualizacoes(),
+    reiniciar: precisaReiniciar(),
     pacotes: await resumoPacotesCache(),
     ferramentas: { vendor, kiwix: kiwixBin, pmtiles: pmtilesBin },
   });
@@ -725,6 +726,14 @@ rota('POST', /^\/api\/iniciar\/cancelar$/, async (req, res) => {
 // ---------- Atualizar (tudo que usa internet) ----------
 rota('GET', /^\/api\/atualizacoes$/, async (req, res, url) =>
   json(res, 200, await verificarAtualizacoes(config, { forcar: url.searchParams.has('forcar') })));
+// Reinicia o programa (depois de instalar uma versão nova). A janela preta continua aberta:
+// este processo só espera o novo terminar.
+rota('POST', /^\/api\/programa\/reiniciar$/, async (req, res) => {
+  if (haTarefasAtivas() || atualizando() || iniciando()) return erro(res, 409, 'Espere os downloads e a preparação terminarem antes de reiniciar.');
+  json(res, 200, { ok: true, pid: process.pid });
+  setTimeout(() => reiniciarProcesso().catch((e) => registrarErro('reiniciar', e)), 300);
+});
+
 rota('POST', /^\/api\/atualizar$/, async (req, res) => json(res, 200, atualizarProtocoloZero(contextoAtualizar())));
 rota('GET', /^\/api\/atualizar$/, async (req, res) => json(res, 200, await relatorioAtualizacao()));
 rota('POST', /^\/api\/atualizar\/cancelar$/, async (req, res) => {
@@ -1563,6 +1572,32 @@ async function cicloAutomatico() {
   }
 }
 
+let servidorHttp = null;
+const relogiosProcura = [];
+
+/**
+ * Troca este processo por um novo, com a versão do programa que acabou de ser instalada.
+ * Fecha o servidor e o leitor de enciclopédias, inicia o novo processo na mesma janela e fica só
+ * esperando ele terminar (assim a janela preta e o "Iniciar Protocolo Zero" continuam iguais).
+ */
+async function reiniciarProcesso() {
+  console.log('\n  Reiniciando o Protocolo Zero com a versão nova…\n');
+  for (const r of relogiosProcura) clearTimeout(r);
+  await pararKiwix().catch(() => {});
+  await new Promise((r) => {
+    servidorHttp.close(() => r());
+    servidorHttp.closeAllConnections?.();
+  });
+  fs.rmSync(ARQ_INSTANCIA, { force: true });
+  const args = [...process.execArgv, ...process.argv.slice(1).filter((a) => a !== '--sem-navegador'), '--sem-navegador'];
+  const filho = spawn(process.execPath, args, { cwd: RAIZ, stdio: 'inherit', env: process.env });
+  filho.on('exit', (codigo) => process.exit(codigo ?? 0));
+  filho.on('error', (e) => {
+    console.error('  Não foi possível reiniciar:', e.message);
+    process.exit(1);
+  });
+}
+
 async function principal() {
   const [maior] = process.versions.node.split('.').map(Number);
   if (maior < 20) {
@@ -1591,13 +1626,13 @@ async function principal() {
   await carregarConfig();
   await carregarCatalogo();
 
-  const servidor = http.createServer((req, res) => {
+  const servidor = (servidorHttp = http.createServer((req, res) => {
     tratar(req, res).catch((e) => {
       console.error('[erro]', req.method, req.url, e);
       if (!res.headersSent) erro(res, e.status || 500, e.message || 'Erro interno');
       else res.end();
     });
-  });
+  }));
   const candidatas = Array.from({ length: 11 }, (_, i) => PORTA_PADRAO + i).filter((p) => p !== PORTA_KIWIX);
   for (const [i, p] of candidatas.entries()) {
     try {
@@ -1626,8 +1661,7 @@ async function principal() {
 
   // Procura atualizações sozinho (só avisa; baixar depende do clique em "Atualizar").
   const procurar = () => verificarAtualizacoes(config).catch((e) => console.error('[atualizações]', e.message));
-  setTimeout(procurar, 20000);
-  setInterval(procurar, 6 * 3600 * 1000).unref();
+  relogiosProcura.push(setTimeout(procurar, 20000), setInterval(procurar, 6 * 3600 * 1000).unref());
 
   const encerrar = async () => {
     console.log('\n  Encerrando o Protocolo Zero…');

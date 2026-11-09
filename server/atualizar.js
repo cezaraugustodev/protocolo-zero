@@ -14,6 +14,11 @@ import { explicarSemIA } from './iniciar.js';
 import { criarExecutor } from './relatorio.js';
 import * as bib from './biblioteca.js';
 import * as pacotes from './pacotes.js';
+import * as programa from './programa.js';
+
+// Versão nova do programa instalada: precisa reiniciar para usar (a página mostra "Reiniciar agora").
+let reinicioPendente = false;
+export const precisaReiniciar = () => reinicioPendente;
 
 const ARQ_RELATORIO = path.join(DADOS, 'relatorio-atualizar.json');
 const ARQ_VERIFICACAO = path.join(DADOS, 'atualizacoes.json');
@@ -118,6 +123,14 @@ async function pendenciasRemotas() {
   }
   const git = await estadoGit().catch(() => null);
   if (git?.atras > 0) itens.push({ tipo: 'programa', titulo: `Programa Protocolo Zero (${git.atras} melhoria(s))`, tamanho: 0, podeAplicar: git.limpo });
+  if (!git && !reinicioPendente) {
+    // Instalado pelo ZIP: compara os arquivos com a versão publicada no GitHub.
+    const v = await programa.verificar().catch(() => null);
+    if (v && !v.atualizado) {
+      const data = v.data ? new Date(v.data).toLocaleDateString('pt-BR') : '';
+      itens.push({ tipo: 'programa', titulo: `Programa Protocolo Zero (versão nova${data ? ` de ${data}` : ''})`, tamanho: v.bytes || 0, podeAplicar: true });
+    }
+  }
   return itens;
 }
 
@@ -314,14 +327,25 @@ export function atualizarProtocoloZero(ctx) {
 
       await rodar('programa', async (p) => {
         const git = await estadoGit({ buscar: false }).catch((e) => ({ erro: e.message }));
-        if (!git) return { estado: 'pulado', mensagem: 'Instalado sem git: para atualizar o programa, baixe a versão nova do repositório' };
+        if (!git) {
+          // Instalado pelo ZIP: baixa do GitHub só os arquivos que mudaram.
+          if (reinicioPendente) return { estado: 'aviso', mensagem: 'A versão nova já foi instalada. Clique em "Reiniciar agora" para usar.' };
+          p.mensagem = 'Procurando versão nova do programa…';
+          const v = await programa.verificar(sinal);
+          if (v.atualizado) return { mensagem: 'Na versão mais recente' };
+          const r = await programa.atualizar({ sinal, aoProgresso: (x) => (p.mensagem = `Baixando a versão nova: arquivo ${x.n} de ${x.total}…`) });
+          reinicioPendente = true;
+          if (ultima?.remotas) ultima.remotas = ultima.remotas.filter((x) => x.tipo !== 'programa');
+          return { estado: 'aviso', mensagem: `Versão nova instalada (${r.trocados + r.apagados} arquivo(s)). Clique em "Reiniciar agora" para usar.` };
+        }
         if (git.erro) throw new Error(git.erro);
         if (!git.atras) return { mensagem: 'Na versão mais recente' };
         if (!git.limpo) return { estado: 'aviso', mensagem: `Há ${git.atras} melhoria(s), mas os arquivos do programa foram modificados neste computador; a atualização automática foi pulada para não perder suas mudanças.` };
         p.mensagem = 'Baixando a versão nova do programa…';
         await executarCmd('git', ['pull', '--ff-only', '--quiet'], { cwd: RAIZ, timeout: 180000 });
+        reinicioPendente = true;
         if (ultima?.remotas) ultima.remotas = ultima.remotas.filter((r) => r.tipo !== 'programa');
-        return { estado: 'aviso', mensagem: `${git.atras} melhoria(s) baixada(s). Feche o Protocolo Zero e rode "npm start" de novo para usar a versão nova.` };
+        return { estado: 'aviso', mensagem: `${git.atras} melhoria(s) baixada(s). Clique em "Reiniciar agora" para usar a versão nova.` };
       });
 
       rel.baixou = baixou;

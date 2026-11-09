@@ -104,7 +104,9 @@ Em **Ajustes → Atualizações e inicialização** você pode marcar:
 
 A atualização **só acrescenta**. O que você já baixou fica no seu computador, mesmo se a fonte original sair do ar. Seus arquivos, anotações e conversas nunca são alterados.
 
-Para atualizar o programa em si, baixe o ZIP de novo e substitua os arquivos da pasta, **mantendo a pasta `dados`**.
+O **programa** também se atualiza sozinho pelo botão **Atualizar**: quando sai uma versão nova, ele baixa do GitHub só os arquivos que mudaram, confere cada um e mostra **Reiniciar agora** no menu lateral. Seus dados (pasta `dados`) não são tocados.
+
+> **Tem uma cópia anterior a novembro de 2026?** Ela ainda não sabe se atualizar sozinha. Baixe o ZIP de novo uma única vez e substitua os arquivos da pasta, **mantendo a pasta `dados`**. Daí em diante, as próximas versões chegam pelo botão **Atualizar**. (Quem instalou com `git clone` já recebe tudo pelo **Atualizar**.)
 
 ---
 

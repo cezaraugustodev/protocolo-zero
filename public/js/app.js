@@ -82,11 +82,38 @@ function renderizarRodape() {
     s.pacotes?.pendentes
       ? h('a', { class: 'pilula-status link', href: '#/inicio' }, h('i', { class: 'ponto alerta pulsa' }), `${s.pacotes.pendentes} pacote(s) para descompactar — Iniciar`)
       : null,
-    s.atualizacoes?.quantidade
+    s.reiniciar
+      ? h('button', { class: 'pilula-status link destaque-reiniciar', title: 'Uma versão nova do programa foi instalada. Reinicie para usar.', onclick: reiniciarPrograma },
+          h('i', { class: 'ponto ok pulsa' }), 'Versão nova instalada — Reiniciar agora')
+      : null,
+    !s.reiniciar && s.atualizacoes?.quantidade
       ? h('a', { class: 'pilula-status link', href: '#/inicio/atualizar' }, h('i', { class: 'ponto ceu' }), `${s.atualizacoes.quantidade} atualização(ões) disponível(is)`)
       : null,
     h('div', { class: 'pilula-status' }, h('i', { class: 'ponto' }), `Livre no disco: ${(s.disco.livre / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} GB`),
   ].filter(Boolean));
+}
+
+// Reinicia o programa com a versão nova e recarrega a página quando ele voltar.
+let reiniciando = false;
+async function reiniciarPrograma() {
+  if (reiniciando) return;
+  reiniciando = true;
+  try {
+    const { pid } = await api.post('/api/programa/reiniciar');
+    toast('Reiniciando o Protocolo Zero com a versão nova…');
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const r = await fetch('/api/ping', { cache: 'no-store' });
+        if (r.ok && (await r.json()).pid !== pid) return location.reload();
+      } catch {}
+    }
+    toast('O Protocolo Zero não voltou sozinho. Feche a janela preta e abra de novo.', 'erro');
+  } catch (e) {
+    toast(e.message, 'erro');
+  } finally {
+    reiniciando = false;
+  }
 }
 
 let telaComErroDeServidor = false;
