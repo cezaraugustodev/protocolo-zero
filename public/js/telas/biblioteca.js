@@ -1,4 +1,5 @@
-import { h, icone, bytes, toast, modal, confirmar, cabecalho } from '../ui.js';
+import { h, icone, bytes, toast, modal, confirmar, cabecalho, barra } from '../ui.js';
+import * as tradutor from '../leitor/traducao-livro.js';
 import { api } from '../api.js';
 import { navegar, aoAtualizar } from '../app.js';
 
@@ -27,10 +28,10 @@ export const ICONE_TIPO = { pdf: 'livro', epub: 'livro', texto: 'texto', video: 
 const ROTULO_COMPACTADO = { gz: 'compactado (.gz)', bruto: 'pronto para instalar', zip: 'pacote .zip', tgz: 'pacote .tgz', 'tar.gz': 'pacote .tar.gz', tar: 'pacote .tar' };
 const rotuloCompactado = (f) => ROTULO_COMPACTADO[f] || 'compactado';
 
-export function abrirItem(it, { pagina, traduzir } = {}) {
-  // Livros abrem no leitor do projeto, que mostra o arquivo e traduz no próprio leitor.
+export function abrirItem(it, { pagina, traduzido } = {}) {
+  // Livros abrem no leitor do projeto, que mostra o arquivo original ou a cópia traduzida.
   if (['pdf', 'epub', 'texto'].includes(it.tipo)) {
-    return navegar(['ler', encodeURIComponent(it.id), ...(pagina ? ['pagina', String(pagina)] : []), ...(traduzir ? ['traduzir'] : [])].join('/'));
+    return navegar(['ler', encodeURIComponent(it.id), ...(pagina ? ['pagina', String(pagina)] : []), ...(traduzido ? ['traduzido'] : [])].join('/'));
   }
   const url = `/arquivos/${it.arquivo}`;
   if (it.tipo === 'zim') return navegar(`enciclopedia/${encodeURIComponent(it.arquivo.split('/').pop().replace(/\.zim$/, ''))}`);
@@ -42,11 +43,14 @@ export function abrirItem(it, { pagina, traduzir } = {}) {
 }
 
 export async function render(raiz, { estado, args = [] }) {
-  const [cat, itensIniciais, compactadosIniciais] = await Promise.all([
+  const [cat, itensIniciais, compactadosIniciais, traducoesIniciais] = await Promise.all([
     api.get('/api/catalogo'),
     api.get('/api/biblioteca'),
     api.get('/api/compactados').catch(() => []),
+    api.get('/api/traducoes').catch(() => ({})),
   ]);
+  let traducoes = traducoesIniciais; // id -> { total, feitas, completo, bytes }: cópias traduzidas guardadas
+  const cartoes = new Map(); // id -> elemento do card (para atualizar só ele durante a tradução)
   let itens = itensIniciais;
   let compactados = compactadosIniciais;
   const categorias = new Map(cat.categorias.map((c) => [c.id, c]));
@@ -226,24 +230,95 @@ export async function render(raiz, { estado, args = [] }) {
     }));
   }
 
+  // Situação da cópia traduzida de um livro: nada, na fila/traduzindo, parcial, pronta ou com erro.
+  function situacaoTraducao(it) {
+    const t = tradutor.trabalho(it.id);
+    const r = traducoes[it.id];
+    if (t && tradutor.ativo(it.id)) return { estado: 'ativo', progresso: t.progresso, mensagem: t.mensagem, preparando: t.estado !== 'traduzindo' };
+    if (r?.completo) return { estado: 'pronto', bytes: r.bytes };
+    if (t?.estado === 'erro') return { estado: 'erro', mensagem: t.mensagem, progresso: r?.total ? r.feitas / r.total : 0, bytes: r?.bytes };
+    if (r) return { estado: 'parcial', progresso: r.total ? r.feitas / r.total : 0, bytes: r.bytes };
+    return { estado: 'nada' };
+  }
+
+  function confirmarTraducao(it) {
+    return new Promise((resolve) => {
+      let fechar;
+      const responder = (v) => { fechar(); resolve(v); };
+      fechar = modal(h('div', { class: 'pilha' },
+        h('h3', { style: { margin: 0 } }, 'Traduzir o livro inteiro?'),
+        h('p', {}, `“${it.titulo}” será traduzido para o português pela IA do computador, um trecho de cada vez. Um livro grande pode levar bastante tempo.`),
+        h('p', { class: 'suave' }, 'Você pode continuar usando o Protocolo Zero enquanto isso: o andamento aparece no card do livro. A cópia traduzida fica guardada neste computador, e você escolhe abrir o original ou o traduzido. Para apagar a cópia, use “Remover tradução”.'),
+        h('div', { class: 'linha', style: { justifyContent: 'flex-end', gap: '8px' } },
+          h('button', { class: 'botao', onclick: () => responder(false) }, 'Cancelar'),
+          h('button', { class: 'botao primario', onclick: () => responder(true) }, icone('globo', 15), 'Traduzir'))), { largura: 520 });
+    });
+  }
+
+  async function traduzirLivro(it) {
+    if (!(await confirmarTraducao(it))) return;
+    tradutor.iniciar(it);
+    redesenharCartao(it.id);
+  }
+
+  async function removerTraducao(it) {
+    if (!(await confirmar(`Remover a cópia traduzida de “${it.titulo}”? O arquivo original continua na Biblioteca. Para ler traduzido de novo, será preciso traduzir outra vez.`, { botao: 'Remover tradução', perigo: true }))) return;
+    try {
+      tradutor.esquecer(it.id);
+      await api.del(`/api/biblioteca/${encodeURIComponent(it.id)}/traducao`);
+      delete traducoes[it.id];
+      redesenharCartao(it.id);
+      toast('Tradução removida.');
+    } catch (e) {
+      toast(e.message, 'erro');
+    }
+  }
+
+  function linhaTraducao(it, sit) {
+    if (sit.estado === 'nada' || sit.estado === 'pronto') return null;
+    const pct = Math.floor((sit.progresso || 0) * 100);
+    const texto = sit.estado === 'ativo'
+      ? (sit.preparando ? sit.mensagem : `Traduzindo… ${pct}%`)
+      : sit.estado === 'erro' ? sit.mensagem : pct ? `Tradução parcial: ${pct}%` : 'Tradução parcial';
+    const b = barra(sit.progresso || 0);
+    if (sit.estado === 'ativo' && sit.preparando) b.classList.add('indeterminada');
+    if (sit.estado === 'erro') b.classList.add('perigo');
+    return h('div', { class: 'livro-trad' },
+      b,
+      h('div', { class: 'livro-trad-linha' },
+        h('small', { class: sit.estado === 'erro' ? 'perigo-texto' : 'suave', title: sit.mensagem || '' }, texto),
+        sit.estado === 'ativo'
+          ? h('button', { class: 'botao pequeno', onclick: () => { tradutor.parar(it.id); recarregarTraducoes(); } }, 'Parar')
+          : h('button', { class: 'botao pequeno', onclick: () => { tradutor.iniciar(it); redesenharCartao(it.id); } }, 'Continuar')));
+  }
+
   function cartao(it) {
     const c = categorias.get(it.categoria) || { cor: '#6d7168', nome: it.categoria };
-    return h('article', { class: 'livro' },
+    const livro = ['pdf', 'epub', 'texto'].includes(it.tipo);
+    const sit = livro ? situacaoTraducao(it) : { estado: 'nada' };
+    const pronto = sit.estado === 'pronto';
+    const el = h('article', { class: 'livro', 'data-id': it.id },
       h('div', { class: 'capa', style: { '--cor': c.cor } }, icone(ICONE_TIPO[it.tipo] || 'pasta', 34, { espessura: 1.5 }), h('span', { class: 'tipo' }, ROTULO_TIPO[it.tipo] || it.tipo)),
       h('div', {},
-        h('h3', {}, it.titulo, SELO[it.confianca] ? h('span', { class: SELO[it.confianca][1], title: SELO[it.confianca][2] }, SELO[it.confianca][0]) : null),
-        h('div', { class: 'meta' }, [it.fonte, bytes(it.tamanho)].filter(Boolean).join(' · '))),
+        h('h3', {}, it.titulo, pronto ? h('span', { class: 'selo-traduzido', title: 'Há uma cópia traduzida para o português guardada neste computador' }, '(traduzido)') : null,
+          SELO[it.confianca] ? h('span', { class: SELO[it.confianca][1], title: SELO[it.confianca][2] }, SELO[it.confianca][0]) : null),
+        h('div', { class: 'meta' }, [it.fonte, bytes(it.tamanho), sit.bytes && (pronto || sit.estado === 'parcial') ? `tradução: ${bytes(sit.bytes)}` : null].filter(Boolean).join(' · '))),
+      livro ? linhaTraducao(it, sit) : null,
       h('div', { class: 'acoes' },
-        h('button', { class: 'botao pequeno primario', onclick: () => abrirItem(it) }, icone('abrir', 14), 'Abrir'),
-        ['pdf', 'epub', 'texto'].includes(it.tipo) ? h('button', { class: 'botao pequeno', title: 'Ler no leitor do Protocolo Zero e traduzir com a IA do computador', onclick: () => abrirItem(it, { traduzir: true }) }, 'Traduzir') : null,
+        h('button', { class: 'botao pequeno primario', title: pronto ? 'Abrir o arquivo original' : 'Abrir', onclick: () => abrirItem(it) }, icone('abrir', 14), pronto ? 'Original' : 'Abrir'),
+        pronto ? h('button', { class: 'botao pequeno', title: 'Abrir a cópia traduzida para o português', onclick: () => abrirItem(it, { traduzido: true }) }, icone('globo', 14), 'Traduzido') : null,
+        livro && sit.estado === 'nada' ? h('button', { class: 'botao pequeno', title: 'Traduzir o livro inteiro para o português com a IA do computador', onclick: () => traduzirLivro(it) }, icone('globo', 14), 'Traduzir') : null,
         estadoTexto(it),
         h('span', { style: { flex: 1 } }),
+        livro && sit.estado !== 'nada' && sit.estado !== 'ativo' ? h('button', { class: 'botao pequeno fantasma', title: 'Apaga só a cópia traduzida; o arquivo original continua', onclick: () => removerTraducao(it) }, 'Remover tradução') : null,
         h('button', { class: 'botao botao-icone fantasma', title: 'Editar nome e categoria', 'aria-label': `Editar ${it.titulo}`, onclick: () => editar(it) }, icone('lapis', 16)),
         h('button', { class: 'botao botao-icone fantasma', title: 'Remover', 'aria-label': `Remover ${it.titulo}`, onclick: async () => {
           if (!(await confirmar(`Remover “${it.titulo}” deste computador?`, { botao: 'Remover', perigo: true }))) return;
           try {
+            tradutor.esquecer(it.id);
             await api.del(`/api/biblioteca/${encodeURIComponent(it.id)}`);
             itens = itens.filter((x) => x.id !== it.id);
+            delete traducoes[it.id];
             desenharFiltros();
             desenharGrade();
             toast('Removido.');
@@ -251,6 +326,20 @@ export async function render(raiz, { estado, args = [] }) {
             toast(e.message, 'erro');
           }
         } }, icone('lixo', 17))));
+    cartoes.set(it.id, el);
+    return el;
+  }
+
+  function redesenharCartao(id) {
+    const antigo = cartoes.get(id);
+    const it = itens.find((x) => x.id === id);
+    if (!antigo?.isConnected || !it) return;
+    antigo.replaceWith(cartao(it));
+  }
+
+  async function recarregarTraducoes() {
+    traducoes = await api.get('/api/traducoes').catch(() => traducoes);
+    for (const id of cartoes.keys()) redesenharCartao(id);
   }
 
   // Trocar o nome e a categoria de um item (o arquivo continua no mesmo lugar).
@@ -307,8 +396,22 @@ export async function render(raiz, { estado, args = [] }) {
     itens = await api.get('/api/biblioteca').catch(() => itens);
     desenharGrade();
   }, 8000);
+  // Andamento das traduções em segundo plano: atualiza só o card do livro.
+  let ultimoDesenho = 0;
+  const pararTradutor = tradutor.ouvir(async (ev) => {
+    if (ev.tipo !== 'estado') return;
+    const { id, estado: e } = ev.trabalho;
+    if (['pronto', 'parado', 'erro'].includes(e)) {
+      await recarregarTraducoes();
+      return;
+    }
+    if (Date.now() - ultimoDesenho < 400 && e === 'traduzindo') return;
+    ultimoDesenho = Date.now();
+    redesenharCartao(id);
+  });
   return () => {
     parar();
+    pararTradutor();
     clearInterval(recarregar);
   };
 }

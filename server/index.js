@@ -965,6 +965,12 @@ rota('PUT', /^\/api\/biblioteca\/([\w.-]+)\/traducao$/, async (req, res, url, m)
   await traducao.gravarBloco(m[1], indice, bloco, { texto, chave });
   json(res, 200, { ok: true });
 });
+rota('PUT', /^\/api\/biblioteca\/([\w.-]+)\/traducao\/estado$/, async (req, res, url, m) => {
+  const it = await bib.obter(m[1]);
+  if (!it) return erro(res, 404, 'Documento não encontrado');
+  json(res, 200, await traducao.gravarEstado(m[1], await lerCorpo(req, 1e4)));
+});
+rota('GET', /^\/api\/traducoes$/, async (req, res) => json(res, 200, await traducao.resumos()));
 rota('DELETE', /^\/api\/biblioteca\/([\w.-]+)\/traducao$/, async (req, res, url, m) => {
   await traducao.remover(m[1]);
   json(res, 200, { ok: true });

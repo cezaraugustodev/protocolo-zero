@@ -6,6 +6,7 @@ import { h, icone, aviso, toast, modal, barra, confirmar } from '../ui.js';
 import { api } from '../api.js';
 import { traduzirTexto, caixaTraducao } from '../traduzir.js';
 import { blocosDaPaginaPdf, coresDoBloco } from '../leitor/pdf-blocos.js';
+import * as tradutor from '../leitor/traducao-livro.js';
 
 const AVISO_TRAD = 'Tradução automática feita pela IA do computador: pode ter erros. Em saúde e emergência, siga as fontes oficiais.';
 const SEM_PDFJS = 'O leitor de PDF ainda não foi baixado neste computador. Use "Instalar conteúdo" para baixar os componentes de leitura.';
@@ -82,7 +83,8 @@ function realcar(el, inicio, fim, props) {
 
 export async function render(raiz, { args = [] } = {}) {
   const id = args[0];
-  const querTraducao = args.includes('traduzir');
+  // #/ler/<id>/traduzido abre direto na cópia traduzida (botão "Traduzido" da Biblioteca).
+  const querTraducao = args.includes('traduzido') || args.includes('traduzir');
   const posPagina = args.indexOf('pagina');
   const paginaPedida = posPagina >= 0 ? Math.max(1, Number(args[posPagina + 1]) || 1) : null;
   const posNota = args.indexOf('nota');
@@ -155,13 +157,14 @@ export async function render(raiz, { args = [] } = {}) {
   let indice = 1;
   let modoTraduzido = querTraducao;
   let ctrl = null;
-  let rodandoTudo = false;
   let termoDestaque = '';
   let vis = null; // o leitor do tipo de arquivo (PDF ou texto)
 
   // ----- elementos da tela -----
-  const botao = (ic, rotulo, onclick, classe = '') => h('button', { class: `lt-btn ${classe}`, title: rotulo, 'aria-label': rotulo, onclick },
-    icone(ic, 18), h('span', { class: 'lt-btn-rotulo' }, rotulo));
+  const botao = (ic, rotulo, onclick, classe = '', curto = '') => h('button', { class: `lt-btn ${classe}`, title: rotulo, 'aria-label': rotulo, onclick },
+    icone(ic, 18), curto
+      ? h('span', { class: 'lt-btn-rotulo' }, h('span', { class: 'lt-rotulo-longo' }, rotulo), h('span', { class: 'lt-rotulo-curto' }, curto))
+      : h('span', { class: 'lt-btn-rotulo' }, rotulo));
   const sep = () => h('span', { class: 'lt-sep', 'aria-hidden': 'true' });
 
   const contNotas = h('span', { class: 'lt-contador' });
@@ -180,8 +183,8 @@ export async function render(raiz, { args = [] } = {}) {
   const btnOriginal = h('button', { onclick: () => definirModo(false) }, 'Original');
   const btnTraduzido = h('button', { onclick: () => definirModo(true) }, 'Traduzido');
   const seletorModo = h('div', { class: 'segmentado lt-segmentado', 'aria-label': 'Idioma do texto' }, btnOriginal, btnTraduzido);
-  const btnTraduzir = botao('globo', ehPdf ? 'Traduzir página' : 'Traduzir capítulo', () => traduzirAtual(), 'destaque');
-  const btnTraduzirTudo = botao('texto', 'Traduzir o livro', () => traduzirTudo());
+  const btnTraduzir = botao('globo', ehPdf ? 'Traduzir página' : 'Traduzir capítulo', () => traduzirAtual(), 'destaque', ehPdf ? 'Trad. página' : 'Trad. capítulo');
+  const btnTraduzirTudo = botao('texto', 'Traduzir o livro', () => traduzirTudo(), '', 'Trad. livro');
   const btnParar = h('button', { class: 'botao pequeno perigo', hidden: true, onclick: pararTraducao }, 'Parar');
   const btnMarcar = botao('marcador', 'Marcar página', () => alternarMarcador());
   const btnTelaCheia = botao('telacheia', 'Tela cheia', () => alternarTelaCheia());
@@ -228,6 +231,7 @@ export async function render(raiz, { args = [] } = {}) {
           h('a', { class: 'lt-btn so-icone', href: `/arquivos/${it.arquivo}`, target: '_blank', rel: 'noopener', title: 'Abrir o arquivo original em outra aba', 'aria-label': 'Abrir o arquivo original' }, icone('abrir', 18)),
           btnMarcar, btnTelaCheia)),
       h('div', { class: 'lt-ferramentas' },
+        h('div', { class: 'lt-ferr-leitura' },
         h('div', { class: 'lt-grupo' }, btnSumario, btnNotas, btnMarcadores, btnBusca),
         sep(),
         h('div', { class: 'lt-grupo so-pdf' }, btnUma, btnDuas),
@@ -235,8 +239,8 @@ export async function render(raiz, { args = [] } = {}) {
         h('div', { class: 'lt-grupo' }, btnMenos, nivelZoom, btnMais, h('span', { class: 'so-pdf' }, btnAjuste)),
         sep(),
         h('div', { class: 'lt-grupo lt-temas', role: 'group', 'aria-label': 'Tema de leitura' }, botoesTema),
-        sep(),
-        h('div', { class: 'lt-grupo' }, seletorModo, btnTraduzir, btnTraduzirTudo, btnParar))),
+        h('span', { class: 'lt-sep lt-sep-trad', 'aria-hidden': 'true' })),
+        h('div', { class: 'lt-grupo lt-grupo-trad' }, seletorModo, btnTraduzir, btnTraduzirTudo, btnParar))),
     h('div', { class: 'lt-estado' }, estadoTrad, progresso, avisoTrad, avisoPagina),
     h('div', { class: 'lt-corpo' }, painel, palcoCaixa),
     h('footer', { class: 'lt-rodape' },
@@ -336,6 +340,7 @@ export async function render(raiz, { args = [] } = {}) {
 
   function pararTraducao() {
     ctrl?.abort();
+    tradutor.parar(id);
     estadoTrad.textContent = 'Tradução parada.';
   }
 
@@ -375,9 +380,10 @@ export async function render(raiz, { args = [] } = {}) {
   }
 
   function travarTraducao(sim) {
+    const livro = tradutor.ativo(id);
     btnTraduzir.disabled = sim;
-    btnTraduzirTudo.disabled = sim;
-    btnParar.hidden = !sim;
+    btnTraduzirTudo.disabled = sim || livro;
+    btnParar.hidden = !sim && !livro;
   }
 
   async function traduzirAtual() {
@@ -404,43 +410,37 @@ export async function render(raiz, { args = [] } = {}) {
   }
 
   async function traduzirTudo() {
-    if (rodandoTudo || ctrl) return;
+    if (tradutor.ativo(id) || ctrl) return;
     if (!(await confirmarTraducao(total))) return;
-    if (rodandoTudo || ctrl) return;
-    const meu = new AbortController();
-    ctrl = meu;
-    rodandoTudo = true;
-    travarTraducao(true);
-    let interrompeu = false;
-    try {
-      if (entrarNoModoTraduzido()) await mostrarParte();
-      // Começa pelo que está aberto, para o usuário ver a tradução chegando na hora.
-      const ordem = [...vis.visiveis(), ...Array.from({ length: total }, (_, k) => k + 1).filter((p) => !vis.visiveis().includes(p))];
-      for (let k = 0; k < ordem.length; k++) {
-        if (meu.signal.aborted) {
-          interrompeu = true;
-          break;
-        }
-        const parte = ordem[k];
-        const blocos = await obterBlocos(parte);
-        if (!blocos.some((b, bloco) => b.tipo !== 'imagem' && !traducaoDe(parte, bloco))) continue;
-        progresso.replaceChildren(barra(k / ordem.length), h('small', { class: 'suave' }, `${rotuloLongo(parte)} · ${k + 1} de ${ordem.length}`));
-        await traduzirParte(parte, meu.signal);
-      }
-    } catch (e) {
-      if (e.name !== 'AbortError') {
-        toast(`A tradução parou: ${e.message}`, 'erro');
-        estadoTrad.textContent = `A tradução parou: ${e.message}`;
-      } else interrompeu = true;
-      interrompeu = true;
-    } finally {
-      rodandoTudo = false;
-      travarTraducao(false);
-      progresso.replaceChildren();
-      if (ctrl === meu) ctrl = null;
-      if (!interrompeu) estadoTrad.textContent = `Tradução do livro concluída. ${DICA_ORIGINAL}`;
-    }
+    if (tradutor.ativo(id) || ctrl) return;
+    if (entrarNoModoTraduzido()) await mostrarParte();
+    tradutor.iniciar(it);
   }
+
+  // Andamento da tradução do livro inteiro (feita em segundo plano, também a partir da Biblioteca).
+  function mostrarTrabalho(t) {
+    if (!t) return;
+    const ativo = ['fila', 'preparando', 'traduzindo'].includes(t.estado);
+    if (ativo) {
+      const b = barra(t.progresso || 0);
+      if (t.estado !== 'traduzindo') b.classList.add('indeterminada');
+      progresso.replaceChildren(b, h('small', { class: 'suave' }, t.estado === 'traduzindo' ? `Traduzindo o livro: ${Math.floor((t.progresso || 0) * 100)}% · ${t.mensagem.replace(/^Traduzindo… /, '')}` : t.mensagem));
+    } else {
+      progresso.replaceChildren();
+      if (t.estado === 'pronto') estadoTrad.textContent = `Tradução do livro concluída. ${DICA_ORIGINAL}`;
+      else if (t.mensagem) estadoTrad.textContent = t.mensagem;
+    }
+    travarTraducao(!!ctrl);
+  }
+
+  const pararDeOuvir = tradutor.ouvir((ev) => {
+    if (ev.tipo === 'estado' && ev.trabalho.id === id) mostrarTrabalho(ev.trabalho);
+    if (ev.tipo === 'bloco' && ev.id === id) {
+      (traducoes[String(ev.parte)] ||= {})[String(ev.bloco)] = { texto: ev.texto, quando: Date.now(), chave: ev.chave || null };
+      const alvo = elementos.get(`${ev.parte}:${ev.bloco}`);
+      if (alvo) atualizarBlocoEl(ev.parte, ev.bloco, alvo.dados, alvo.el);
+    }
+  });
 
   // ----- navegação -----
   const passo = () => vis?.passo() || 1;
@@ -892,6 +892,7 @@ export async function render(raiz, { args = [] } = {}) {
 
   const limpar = () => {
     ctrl?.abort();
+    pararDeOuvir();
     busca.ctrl?.abort();
     if (pendente) salvarLeitura(true);
     clearTimeout(esperaResize);
@@ -929,7 +930,7 @@ export async function render(raiz, { args = [] } = {}) {
     const n = notas.find((x) => x.id === notaPedida);
     if (n) vis.piscarNota?.(n.id);
   }
-  if (querTraducao) traduzirAtual();
+  mostrarTrabalho(tradutor.trabalho(id));
   palco.focus({ preventScroll: true });
   return limpar;
 

@@ -59,3 +59,45 @@ export async function remover(id) {
   if (!dentroDe(PASTA, pasta)) return;
   await fsp.rm(pasta, { recursive: true, force: true }).catch(() => {});
 }
+
+// Estado da tradução do livro inteiro (feita em segundo plano a partir da Biblioteca ou do leitor).
+// Fica em dados/traducoes/<id>/estado.json: { total, feitas, completo, atualizado }.
+const arquivoEstado = (id) => path.join(pastaDe(id), 'estado.json');
+
+export async function gravarEstado(id, { total, feitas, completo }) {
+  if (!idValido(id)) throw new Error('Documento inválido');
+  const pasta = pastaDe(id);
+  if (!dentroDe(PASTA, pasta)) throw new Error('Documento inválido');
+  const t = Math.max(0, Math.min(1e7, Math.round(Number(total) || 0)));
+  const f = Math.max(0, Math.min(t, Math.round(Number(feitas) || 0)));
+  await fsp.mkdir(pasta, { recursive: true });
+  const estado = { total: t, feitas: f, completo: !!completo && f >= t, atualizado: Date.now() };
+  await gravarJSON(arquivoEstado(id), estado);
+  return estado;
+}
+
+/** Resumo das traduções guardadas: { <id>: { total, feitas, completo, bytes } } (para os cards da Biblioteca). */
+export async function resumos() {
+  let pastas = [];
+  try {
+    pastas = await fsp.readdir(PASTA, { withFileTypes: true });
+  } catch {
+    return {};
+  }
+  const saida = {};
+  for (const p of pastas) {
+    if (!p.isDirectory() || !idValido(p.name)) continue;
+    const pasta = pastaDe(p.name);
+    let bytes = 0;
+    let partes = 0;
+    for (const nome of await fsp.readdir(pasta).catch(() => [])) {
+      const st = await fsp.stat(path.join(pasta, nome)).catch(() => null);
+      if (st?.isFile()) bytes += st.size;
+      if (/^\d+\.json$/.test(nome)) partes++;
+    }
+    const estado = await lerJSON(path.join(pasta, 'estado.json'), null);
+    if (!estado && !partes) continue;
+    saida[p.name] = { total: estado?.total || 0, feitas: estado?.feitas || 0, completo: !!estado?.completo, bytes };
+  }
+  return saida;
+}
