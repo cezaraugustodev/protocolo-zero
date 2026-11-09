@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protocolo Zero</title>
+  <meta name="description" content="Biblioteca offline de sobrevivência, saúde e autossuficiência, com assistente de IA local.">
+  <link rel="icon" href="icone.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="lateral" id="lateral">
+      <a class="marca" href="#/inicio" aria-label="Protocolo Zero — início">
+        <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+          <rect width="36" height="36" rx="10" fill="var(--tinta)"/>
+          <ellipse cx="18" cy="18" rx="7.4" ry="11" fill="none" stroke="var(--fundo)" stroke-width="2.8"/>
+          <path d="M14.2 24.6 21.8 11.4" stroke="var(--brasa)" stroke-width="2.8" stroke-linecap="round"/>
+        </svg>
+        <div><b>Protocolo Zero</b><span>Conhecimento offline</span></div>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="lateral-rodape" id="lateral-rodape"></div>
+    </aside>
+    <button class="botao-recolher" id="recolher-menu" type="button" aria-label="Recolher menu" title="Recolher menu" aria-expanded="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>
+    </button>
+    <div>
+      <div class="topo-movel">
+        <button class="botao botao-icone fantasma" id="abrir-menu" aria-label="Abrir menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <b style="font-family: var(--serif)">Protocolo Zero</b>
+      </div>
+      <main class="principal" id="principal" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

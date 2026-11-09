@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configurando · Protocolo Zero</title>
+<!-- Aberta pelo "Iniciar Protocolo Zero" na primeira vez, enquanto prepara o Node.js (antes de o servidor existir).
+     Lê o andamento em ../runtime/estado.js (escrito pelos scripts de instalar/). Quando o servidor responde,
+     vai sozinha para o app, que continua a configuração na tela "Configurando o Protocolo Zero". -->
+<style>
+  :root { --fundo: #f6f4ee; --tinta: #1d1f1a; --suave: #6d7168; --linha: #e2ded3; --brasa: #c2410c; --superficie: #fffdf8; --erro: #b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --fundo: #141512; --tinta: #ecebe5; --suave: #a3a69c; --linha: #2c2e28; --brasa: #f97316; --superficie: #1c1d19; --erro: #f87171; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; background: var(--fundo); color: var(--tinta);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { width: min(600px, 100%); display: grid; gap: 18px; text-align: center; }
+  h1 { margin: 0; font-size: clamp(24px, 4vw, 32px); }
+  p { margin: 0; color: var(--suave); }
+  .cartao { display: grid; gap: 12px; justify-items: center; background: var(--superficie); border: 1px solid var(--linha); border-radius: 14px; padding: 24px 20px; }
+  .loader { width: 46px; height: 46px; border-radius: 50%; border: 4px solid var(--linha); border-top-color: var(--brasa); animation: gira .9s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  small { color: var(--suave); }
+  a { color: var(--brasa); }
+  #ajuda { display: none; text-align: left; justify-items: stretch; }
+  #ajuda h2 { margin: 0; font-size: 19px; color: var(--erro); }
+  #ajuda ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+  code { background: var(--fundo); border: 1px solid var(--linha); border-radius: 6px; padding: 1px 6px; font-size: 14px; }
+  .falhou #ajuda { display: grid; }
+  .falhou #andamento { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Configurando o Protocolo Zero</h1>
+  <p>Isso só acontece na primeira vez.</p>
+  <div class="cartao" id="andamento">
+    <div class="loader" aria-hidden="true"></div>
+    <b id="passo">Preparando os componentes do Protocolo Zero…</b>
+    <small id="detalhe">Acompanhe também na janela preta. Não feche ela.</small>
+  </div>
+  <div class="cartao" id="ajuda" role="alert">
+    <h2>Não foi possível preparar o programa que faz o Protocolo Zero funcionar</h2>
+    <p>Ele se chama <b>Node.js</b> e é gratuito. Instale você mesmo, uma vez só:</p>
+    <ol id="passos-ajuda"></ol>
+    <small>Se você tem internet e quer tentar de novo do jeito automático, é só fechar a janela preta e abrir o Protocolo Zero outra vez.</small>
+  </div>
+  <small id="rodape">Se esta página não mudar sozinha em alguns minutos, abra <a href="http://localhost:4321/">http://localhost:4321</a>.</small>
+</main>
+<script>
+  var PASSOS = {
+    instalando: ['Preparando os componentes do Protocolo Zero…', 'Leva poucos segundos. Acompanhe também na janela preta.'],
+    baixando: ['Baixando os componentes do site oficial…', 'A cópia que veio junto não funcionou; baixando de nodejs.org (cerca de 30 MB).'],
+    pronto: ['Iniciando…', 'Quase lá. A configuração continua na próxima tela.']
+  };
+  var ua = navigator.userAgent;
+  var so = /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) ? 'mac' : 'linux';
+  var AJUDA = {
+    windows: ['Abra <a href="https://nodejs.org/pt/download" target="_blank" rel="noopener">nodejs.org/pt/download</a> e baixe o <b>instalador para Windows</b> da versão <b>LTS</b>.',
+      'Abra o arquivo baixado e clique em <b>Next</b> (Avançar) até <b>Finish</b> (Concluir).',
+      'Feche a janela preta e abra <b>Iniciar Protocolo Zero</b> de novo.'],
+    mac: ['Abra <a href="https://nodejs.org/pt/download" target="_blank" rel="noopener">nodejs.org/pt/download</a> e baixe o <b>instalador para macOS</b> (.pkg) da versão <b>LTS</b>.',
+      'Abra o arquivo baixado e siga os passos até o fim.',
+      'Feche a janela do Terminal e abra <b>Iniciar Protocolo Zero</b> de novo.'],
+    linux: ['Instale o Node.js <b>versão 20 ou mais nova</b> pelo gerenciador de pacotes da sua distribuição ou por <a href="https://nodejs.org/pt/download" target="_blank" rel="noopener">nodejs.org/pt/download</a>.',
+      'Confira no terminal: <code>node --version</code> deve mostrar v20 ou maior.',
+      'Abra <b>iniciar-protocolo-zero.sh</b> de novo.']
+  };
+  document.getElementById('passos-ajuda').innerHTML = AJUDA[so].map(function (t) { return '<li>' + t + '</li>'; }).join('');
+
+  function mostrar(etapa) {
+    if (etapa === 'falhou') {
+      document.body.classList.add('falhou');
+      document.getElementById('rodape').style.display = 'none';
+      return;
+    }
+    document.body.classList.remove('falhou');
+    var p = PASSOS[etapa];
+    if (!p) return;
+    document.getElementById('passo').textContent = p[0];
+    document.getElementById('detalhe').textContent = p[1];
+  }
+
+  // Andamento: os scripts de instalar/ gravam runtime/estado.js (um <script> funciona até a partir de um arquivo local).
+  function lerEstado() {
+    var s = document.createElement('script');
+    s.src = '../runtime/estado.js?t=' + Date.now();
+    s.onload = function () { if (window.PZ_ESTADO) mostrar(window.PZ_ESTADO.etapa); s.remove(); };
+    s.onerror = function () { s.remove(); };
+    document.head.appendChild(s);
+  }
+
+  // Pergunta ao servidor local se já abriu (uma imagem também funciona a partir de um arquivo local).
+  var portas = [4321, 4323, 4324, 4325];
+  function testar() {
+    lerEstado();
+    portas.forEach(function (p) {
+      var img = new Image();
+      img.onload = function () { location.replace('http://localhost:' + p + '/'); };
+      img.src = 'http://localhost:' + p + '/icone.svg?t=' + Date.now();
+    });
+    setTimeout(testar, 1500);
+  }
+  testar();
+</script>
+</body>
+</html>

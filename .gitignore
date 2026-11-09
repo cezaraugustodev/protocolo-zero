@@ -1,0 +1,14 @@
+# Conteúdo baixado e dados do usuário (podem ter dezenas de GB)
+dados/
+# Node.js e IAs levados junto em cópias para pendrive/HD
+runtime/
+ia-modelos/
+LEIA-ME.txt
+node_modules/
+# Só o README vai para o repositório
+*.md
+!README.md
+.claude/
+*.log
+.DS_Store
+Thumbs.db

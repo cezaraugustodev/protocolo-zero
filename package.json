@@ -1,0 +1,23 @@
+{
+  "name": "protocolo-zero",
+  "version": "0.1.0",
+  "description": "Biblioteca offline de sobrevivência, saúde e autossuficiência em português, com assistente de IA local (Ollama).",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "servidor": "node server/index.js --sem-navegador"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "offline",
+    "sobrevivencia",
+    "ollama",
+    "kiwix",
+    "pt-br"
+  ],
+  "license": "MIT"
+}
