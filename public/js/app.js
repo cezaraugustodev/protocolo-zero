@@ -18,6 +18,7 @@ import * as transferencias from './telas/transferencias.js';
 import * as ajustes from './telas/ajustes.js';
 import * as emergencia from './telas/emergencia.js';
 import * as copiar from './telas/copiar.js';
+import * as notasLeitura from './telas/notas.js';
 
 export const estado = { servidor: null, tarefas: [], ouvintes: new Set() };
 
@@ -27,6 +28,7 @@ const TELAS = {
   configurar: { tela: configurar, nome: 'Instalar conteúdo', icone: 'baixar', destaque: true },
   biblioteca: { tela: biblioteca, nome: 'Biblioteca', icone: 'livro' },
   ler: { tela: documento, nome: 'Leitor', icone: 'livro', oculta: true },
+  notas: { tela: notasLeitura, nome: 'Notas de leitura', icone: 'nota' },
   'primeiro-uso': { tela: primeiroUso, nome: 'Configurando', icone: 'ajustes', oculta: true, cheia: true },
   assistente: { tela: assistente, nome: 'Assistente', icone: 'chat' },
   enciclopedia: { tela: leitor, nome: 'Enciclopédias', icone: 'globo' },

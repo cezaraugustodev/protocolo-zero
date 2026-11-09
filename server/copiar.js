@@ -50,6 +50,7 @@ function filtroDados(incluir) {
     const topo = rel.split('/')[0];
     if (IGNORAR_DADOS.has(topo) || ignorarArquivoDados(nome)) return false;
     if (topo === 'pacotes') return !!incluir.pacotes;
+    if (topo === 'leitura') return !!incluir.anotacoes; // notas de leitura dos livros
     if (!rel.includes('/') && ANOTACOES.has(nome)) return !!incluir.anotacoes;
     return true;
   };
@@ -65,6 +66,7 @@ export async function tamanhos() {
   const conteudo = await tamanhoDe(DADOS, filtroDados({ anotacoes: false, pacotes: false }));
   let anotacoes = 0;
   for (const n of ANOTACOES) anotacoes += (await fsp.stat(path.join(DADOS, n)).catch(() => ({ size: 0 }))).size;
+  anotacoes += (await tamanhoDe(path.join(DADOS, 'leitura'))).total;
   const pacotes = await tamanhoDe(path.join(DADOS, 'pacotes'));
   const ias = await tamanhoDe(pastaModelosOllama());
   return {

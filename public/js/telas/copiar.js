@@ -101,7 +101,7 @@ export async function render(raiz, { estado }) {
             h('div', {}, h('div', { class: 'nome' }, 'Programa e conteúdo baixado'), h('div', { class: 'desc' }, 'Livros, cartilhas, enciclopédias, mapas, o índice de busca e o Node.js para Windows, macOS e Linux.')),
             h('div', { class: 'tam' }, bytes(t().programa + t().conteudo))),
           opcao('ias', 'Assistente de IA (as IAs baixadas)', t().ias, 'O outro computador ainda precisa do Ollama instalado (gratuito).'),
-          opcao('anotacoes', 'Minhas anotações', t().anotacoes, 'Estoque de emergência, saúde e nutrição e a emergência marcada.'),
+          opcao('anotacoes', 'Minhas anotações', t().anotacoes, 'Estoque de emergência, saúde e nutrição, a emergência marcada e as notas de leitura dos livros.'),
           opcao('pacotes', 'Cópias compactadas de segurança', t().pacotes, 'Servem para restaurar arquivos danificados sem internet. Ocupam mais espaço.'))),
 
       h('div', { class: 'cartao pilha' },

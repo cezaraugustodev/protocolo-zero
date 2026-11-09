@@ -28,6 +28,19 @@ function anexar(el, filhos) {
 }
 
 const CAMINHOS = {
+  marcador: 'M6 3h12v18l-6-4.5L6 21V3Z',
+  lista: 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01',
+  telacheia: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+  sairtela: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
+  umapagina: 'M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z',
+  duaspaginas: 'M3 5h7.5v15H3zM13.5 5H21v15h-7.5z',
+  esquerda: 'm15 5-7 7 7 7',
+  direita: 'm9 5 7 7-7 7',
+  primeira: 'm17 5-7 7 7 7M7 5v14',
+  ultima: 'm7 5 7 7-7 7M17 5v14',
+  nota: 'M5 3h10l4 4v14H5V3Zm9 0v5h5M8 12h8M8 16h5',
+  menos: 'M5 12h14',
+  largura: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
   inicio: 'M3 11.5 12 4l9 7.5M5 10v10h5v-6h4v6h5V10',
   configurar: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.5 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z',
   livro: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15ZM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5',

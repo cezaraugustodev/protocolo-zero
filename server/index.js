@@ -22,6 +22,7 @@ import { avaliarIA, registrarVelocidade, parametrosB, PARAMS_CONFIAVEL, perfisIA
 import { errosRecentes, registrarErro } from './util.js';
 import * as pacotes from './pacotes.js';
 import * as traducao from './traducao.js';
+import * as leitura from './leitura.js';
 import { obterTile, estimarArea, baixarArea, validarArea, usoSatelite, SATELITE } from './satelite.js';
 import { PORTA_KIWIX } from './kiwix.js';
 import { perfilEnergia } from './energia.js';
@@ -935,6 +936,23 @@ rota('GET', /^\/api\/biblioteca\/([\w.-]+)\/epub\/(.+)$/, async (req, res, url, 
   if (!arq) return erro(res, 404, 'Imagem não encontrada no livro');
   res.writeHead(200, { 'Content-Type': arq.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
   res.end(arq.dados);
+});
+
+// Notas de leitura (realces, notas, marcadores e última página lida), por documento.
+rota('GET', /^\/api\/leitura$/, async (req, res) => {
+  const docs = [];
+  for (const d of await leitura.todas()) {
+    const it = await bib.obter(d.id);
+    docs.push({ ...d, titulo: it?.titulo || 'Arquivo removido da biblioteca', tipo: it?.tipo || null, categoria: it?.categoria || null, existe: !!it });
+  }
+  docs.sort((a, b) => (b.atualizado || 0) - (a.atualizado || 0));
+  json(res, 200, { documentos: docs });
+});
+rota('GET', /^\/api\/biblioteca\/([\w.-]+)\/notas$/, async (req, res, url, m) => json(res, 200, await leitura.obter(m[1])));
+rota('PUT', /^\/api\/biblioteca\/([\w.-]+)\/notas$/, async (req, res, url, m) => {
+  const it = await bib.obter(m[1]);
+  if (!it) return erro(res, 404, 'Documento não encontrado');
+  json(res, 200, await leitura.gravar(m[1], await lerCorpo(req, 4e6)));
 });
 
 // Traduções prontas do leitor (ficam guardadas no computador).

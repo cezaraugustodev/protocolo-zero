@@ -1,148 +1,92 @@
-// Leitor de livros do Protocolo Zero.
-// Lê PDF (com pdf.js, o leitor de código aberto usado na indexação), EPUB e textos.
-// A tradução substitui o texto no próprio documento, como o Google Tradutor faz em páginas:
-// clique num parágrafo traduzido para ver o texto original.
-import { h, icone, aviso, toast, modal, barra } from '../ui.js';
+// Leitor de livros do Protocolo Zero: PDF (pdf.js), EPUB e textos.
+// Ferramentas de leitura: sumário, realces e notas, marcadores, busca no livro, 1 ou 2 páginas, zoom,
+// temas de leitura (claro, sépia, escuro), tela cheia, continuar de onde parou e tradução feita pela IA
+// do computador, que aparece no lugar do texto original (clique no trecho traduzido para ver o original).
+import { h, icone, aviso, toast, modal, barra, confirmar } from '../ui.js';
 import { api } from '../api.js';
-import { traduzirTexto } from '../traduzir.js';
+import { traduzirTexto, caixaTraducao } from '../traduzir.js';
+import { blocosDaPaginaPdf, coresDoBloco } from '../leitor/pdf-blocos.js';
 
-const AVISO_TRAD = 'Tradução automática feita pela IA do computador: pode ter erros. Medidas de outros países ficam sublinhadas — clique para ver a conversão. Em saúde e emergência, siga as fontes oficiais.';
+const AVISO_TRAD = 'Tradução automática feita pela IA do computador: pode ter erros. Em saúde e emergência, siga as fontes oficiais.';
 const SEM_PDFJS = 'O leitor de PDF ainda não foi baixado neste computador. Use "Instalar conteúdo" para baixar os componentes de leitura.';
-const DICA_ORIGINAL = 'Clique em um parágrafo traduzido para ver o texto original.';
-
+const DICA_ORIGINAL = 'Clique em um trecho traduzido para ver o texto original.';
 const ROTULO = { pdf: 'PDF', epub: 'Livro digital (EPUB)', texto: 'Texto' };
+const CORES = [['amarelo', 'Amarelo'], ['verde', 'Verde'], ['azul', 'Azul'], ['rosa', 'Rosa']];
+const TEMAS = [['claro', 'Claro'], ['sepia', 'Sépia'], ['escuro', 'Escuro']];
+const CHAVE_PREFS = 'pz-leitor-prefs';
+const MAX_RESULTADOS = 300;
 
-/** Impressão curta do texto original: a tradução guardada só vale para o mesmo trecho. */
-function impressao(texto) {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < texto.length; i++) h1 = Math.imul(h1 ^ texto.charCodeAt(i), 16777619);
-  return (h1 >>> 0).toString(36) + texto.length.toString(36);
-}
-
-/**
- * Junta os pedaços de texto de uma página de PDF (pdf.js) em blocos (parágrafos, títulos, legendas),
- * guardando onde cada bloco fica na página, para a tradução aparecer no mesmo lugar do original.
- */
-function blocosDaPaginaPdf(conteudo, vp, Util) {
-  const linhas = [];
-  let linha = null;
-  for (const item of conteudo.items) {
-    if (typeof item.str !== 'string') continue;
-    const t = Util.transform(vp.transform, item.transform);
-    const tam = Math.hypot(t[2], t[3]);
-    const horizontal = tam > 0 && Math.abs(t[1]) < tam * 0.05 && Math.abs(t[2]) < tam * 0.05;
-    if (!item.str.trim() || !horizontal) {
-      if (linha) linha.espaco = true;
-      if (item.hasEOL && linha) linha.fim = true;
-      continue;
-    }
-    const x = t[4];
-    const base = t[5];
-    const larg = item.width * vp.scale;
-    const nova = !linha || linha.fim || Math.abs(base - linha.base) > tam * 0.5
-      || x < linha.dir - tam * 0.5 || x - linha.dir > tam * 2.5;
-    if (nova) {
-      linha = { esq: x, dir: x + larg, base, tam, texto: item.str };
-      linhas.push(linha);
-    } else {
-      const separa = (linha.espaco || x - linha.dir > tam * 0.15) && !/\s$/.test(linha.texto) && !/^\s/.test(item.str);
-      linha.texto += (separa ? ' ' : '') + item.str;
-      linha.dir = Math.max(linha.dir, x + larg);
-      linha.tam = Math.max(linha.tam, tam);
-    }
-    linha.espaco = false;
-    if (item.hasEOL) linha.fim = true;
-  }
-
-  const blocos = [];
-  let b = null;
-  for (const l of linhas) {
-    const texto = l.texto.replace(/\s+/g, ' ').trim();
-    if (!texto) continue;
-    const topo = l.base - l.tam * 0.92;
-    const fundo = l.base + l.tam * 0.28;
-    const ultima = b?.linhas[b.linhas.length - 1];
-    const junta = b && Math.abs(l.tam - b.tam) <= b.tam * 0.2 && topo > ultima.topo
-      && topo - ultima.fundo < b.tam * 0.8 && l.esq < b.dir + b.tam && l.dir > b.esq - b.tam && b.texto.length < 1500;
-    if (!junta) {
-      b = { linhas: [], esq: l.esq, dir: l.dir, topo, fundo, tam: l.tam, texto: '' };
-      blocos.push(b);
-    }
-    // Palavra quebrada com hífen no fim da linha volta a ficar inteira; item de lista começa em linha nova.
-    b.texto = !b.texto ? texto
-      : /^([•●▪◦■□➢►✓✔–—−-]|\d{1,2}[.)]|[a-z][.)])\s/u.test(texto) ? `${b.texto}\n${texto}`
-        : /\p{L}-$/u.test(b.texto) && /^\p{Ll}/u.test(texto) ? b.texto.slice(0, -1) + texto : `${b.texto} ${texto}`;
-    b.linhas.push({ topo, fundo });
-    b.esq = Math.min(b.esq, l.esq);
-    b.dir = Math.max(b.dir, l.dir);
-    b.topo = Math.min(b.topo, topo);
-    b.fundo = Math.max(b.fundo, fundo);
-  }
-
-  const lim = (v) => Math.min(1, Math.max(0, v));
-  return blocos.filter((x) => /\p{L}/u.test(x.texto)).map((x) => {
-    const m = x.tam * 0.12;
-    const esq = lim((x.esq - m) / vp.width);
-    const topo = lim((x.topo - m) / vp.height);
-    return {
-      tipo: 'paragrafo',
-      texto: x.texto,
-      chave: impressao(x.texto),
-      fonte: x.tam / vp.height,
-      caixa: { x: esq, y: topo, w: lim((x.dir + m) / vp.width) - esq, h: lim((x.fundo + m) / vp.height) - topo },
-    };
-  });
-}
-
-/** Cor do fundo em volta do bloco (mediana da borda) e uma cor de letra que dê para ler sobre ela. */
-function coresDoBloco(ctx, largura, altura, caixa) {
-  const x0 = Math.max(0, Math.floor(caixa.x * largura));
-  const y0 = Math.max(0, Math.floor(caixa.y * altura));
-  const w = Math.max(1, Math.min(largura, Math.ceil((caixa.x + caixa.w) * largura)) - x0);
-  const hh = Math.max(1, Math.min(altura, Math.ceil((caixa.y + caixa.h) * altura)) - y0);
-  let px;
+function lerPrefs() {
+  const padrao = { modo: 'uma', tema: 'claro', ajuste: 'largura', fator: 1, fonte: 18 };
   try {
-    px = ctx.getImageData(x0, y0, w, hh).data;
+    const antiga = Number(localStorage.getItem('pz-leitor-fonte')) || undefined;
+    return { ...padrao, ...(antiga ? { fonte: antiga } : {}), ...JSON.parse(localStorage.getItem(CHAVE_PREFS) || '{}') };
   } catch {
-    return { fundo: '#fff', letra: '#111' };
+    return padrao;
   }
-  const canais = [[], [], []];
-  const pegar = (x, y) => {
-    const i = (y * w + x) * 4;
-    canais[0].push(px[i]);
-    canais[1].push(px[i + 1]);
-    canais[2].push(px[i + 2]);
-  };
-  const passo = Math.max(1, Math.floor((w + hh) / 200));
-  for (let x = 0; x < w; x += passo) { pegar(x, 0); pegar(x, hh - 1); }
-  for (let y = 0; y < hh; y += passo) { pegar(0, y); pegar(w - 1, y); }
-  const [r, g, bl] = canais.map((c) => c.sort((a, z) => a - z)[c.length >> 1] ?? 255);
-  const luz = (cr, cg, cb) => 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
-  // Cor da letra: média dos pontos de dentro do bloco mais diferentes do fundo (as letras do original).
-  const dentro = [];
-  const passoD = Math.max(1, Math.floor(Math.sqrt((w * hh) / 6000)));
-  for (let y = 0; y < hh; y += passoD) {
-    for (let x = 0; x < w; x += passoD) {
-      const i = (y * w + x) * 4;
-      const d = Math.abs(px[i] - r) + Math.abs(px[i + 1] - g) + Math.abs(px[i + 2] - bl);
-      if (d > 120) dentro.push([d, px[i], px[i + 1], px[i + 2]]);
+}
+function gravarPrefs(p) {
+  try {
+    localStorage.setItem(CHAVE_PREFS, JSON.stringify(p));
+  } catch {}
+}
+
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const esperar = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+/** Trechos de um texto onde aparece o termo buscado (sem diferenciar acentos e maiúsculas). */
+function trechosAchados(texto, termo, max) {
+  const t = String(texto || '').normalize('NFC');
+  const n = semAcento(t);
+  const q = semAcento(termo);
+  const r = [];
+  if (!q || n.length !== t.length) {
+    // Texto com caracteres que mudam de tamanho ao tirar acentos: busca simples, sem acento.
+    let i = t.toLowerCase().indexOf(String(termo).toLowerCase());
+    while (q && i >= 0 && r.length < max) {
+      r.push({ antes: t.slice(Math.max(0, i - 60), i), achado: t.slice(i, i + termo.length), depois: t.slice(i + termo.length, i + termo.length + 80) });
+      i = t.toLowerCase().indexOf(String(termo).toLowerCase(), i + termo.length);
     }
+    return r;
   }
-  let letra = luz(r, g, bl) > 140 ? '#111' : '#f5f5f5';
-  if (dentro.length >= 5) {
-    dentro.sort((a, z) => z[0] - a[0]);
-    const topo = dentro.slice(0, Math.max(5, Math.floor(dentro.length * 0.3)));
-    const m = [1, 2, 3].map((k) => Math.round(topo.reduce((s, p) => s + p[k], 0) / topo.length));
-    if (Math.abs(luz(...m) - luz(r, g, bl)) > 90) letra = `rgb(${m[0]}, ${m[1]}, ${m[2]})`;
+  let i = n.indexOf(q);
+  while (i >= 0 && r.length < max) {
+    r.push({ antes: t.slice(Math.max(0, i - 60), i), achado: t.slice(i, i + q.length), depois: t.slice(i + q.length, i + q.length + 80) });
+    i = n.indexOf(q, i + q.length);
   }
-  return { fundo: `rgb(${r}, ${g}, ${bl})`, letra };
+  return r;
+}
+
+/** Envolve o trecho [inicio, fim) do texto de um elemento num <mark> (atravessa negrito, links etc.). */
+function realcar(el, inicio, fim, props) {
+  if (fim <= inicio) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let pos = 0;
+  const alvos = [];
+  for (let no = walker.nextNode(); no; no = walker.nextNode()) {
+    const ini = pos;
+    pos += no.data.length;
+    if (pos <= inicio || ini >= fim) continue;
+    alvos.push([no, Math.max(0, inicio - ini), Math.min(no.data.length, fim - ini)]);
+  }
+  for (const [no, a, b] of alvos) {
+    let alvo = no;
+    if (b < alvo.data.length) alvo.splitText(b);
+    if (a > 0) alvo = alvo.splitText(a);
+    const mark = h('mark', props);
+    alvo.replaceWith(mark);
+    mark.append(alvo);
+  }
 }
 
 export async function render(raiz, { args = [] } = {}) {
   const id = args[0];
   const querTraducao = args.includes('traduzir');
   const posPagina = args.indexOf('pagina');
-  const paginaInicial = posPagina >= 0 ? Math.max(1, Number(args[posPagina + 1]) || 1) : 1;
+  const paginaPedida = posPagina >= 0 ? Math.max(1, Number(args[posPagina + 1]) || 1) : null;
+  const posNota = args.indexOf('nota');
+  const notaPedida = posNota >= 0 ? args[posNota + 1] : null;
 
   if (!id) {
     raiz.append(aviso('erro', 'Documento não informado. Volte à Biblioteca e escolha um livro.'));
@@ -151,10 +95,12 @@ export async function render(raiz, { args = [] } = {}) {
 
   let it;
   let salvas;
+  let leitura;
   try {
-    [it, salvas] = await Promise.all([
+    [it, salvas, leitura] = await Promise.all([
       api.get(`/api/biblioteca/${encodeURIComponent(id)}`),
       api.get(`/api/biblioteca/${encodeURIComponent(id)}/traducao`).catch(() => ({ partes: {} })),
+      api.get(`/api/biblioteca/${encodeURIComponent(id)}/notas`).catch(() => ({ notas: [], marcadores: [], ultima: 1 })),
     ]);
   } catch (e) {
     raiz.append(aviso('erro', e.message), h('a', { class: 'botao', href: '#/biblioteca' }, 'Voltar à Biblioteca'));
@@ -169,21 +115,40 @@ export async function render(raiz, { args = [] } = {}) {
     return;
   }
 
-  raiz.style.maxWidth = 'none';
+  const ehPdf = it.tipo === 'pdf';
+  const prefs = lerPrefs();
+  raiz.classList.add('tela-leitor');
 
-  // Traduções guardadas: { "3": { "0": { texto, quando }, … }, … }.
+  // ----- notas de leitura (realces, notas, marcadores, última página) -----
+  const notas = Array.isArray(leitura.notas) ? leitura.notas : [];
+  const marcadores = new Set(leitura.marcadores || []);
+  let ultima = leitura.ultima || 1;
+  let esperaSalvar = null;
+  let pendente = false;
+  function salvarLeitura(imediato = false) {
+    pendente = true;
+    clearTimeout(esperaSalvar);
+    const enviar = () => {
+      pendente = false;
+      return api.put(`/api/biblioteca/${encodeURIComponent(id)}/notas`, { notas, marcadores: [...marcadores], ultima })
+        .catch((e) => toast(`Não foi possível salvar as notas: ${e.message}`, 'erro'));
+    };
+    if (imediato) return enviar();
+    esperaSalvar = setTimeout(enviar, 700);
+    return null;
+  }
+
+  // ----- traduções guardadas: { "3": { "0": { texto, quando, chave }, … }, … } -----
   const traducoes = {};
   for (const [parte, dados] of Object.entries(salvas.partes || {})) {
-    const blocos = dados?.blocos || {};
-    for (const [bi, t] of Object.entries(blocos)) {
-      if (!t?.texto) continue;
-      (traducoes[parte] ||= {})[bi] = { texto: t.texto, quando: t.quando || null, chave: t.chave || null };
+    for (const [bi, t] of Object.entries(dados?.blocos || {})) {
+      if (t?.texto) (traducoes[parte] ||= {})[bi] = { texto: t.texto, quando: t.quando || null, chave: t.chave || null };
     }
   }
 
   const partes = []; // capítulos do EPUB ou partes do texto
-  const blocosCache = new Map(); // parte -> blocos (PDF: parágrafos extraídos da página)
-  const elementos = new Map(); // "parte:bloco" -> elemento na tela
+  const blocosCache = new Map(); // parte -> blocos
+  const elementos = new Map(); // "parte:bloco" -> { el, dados }
   const alternados = new Set(); // blocos que o usuário mandou mostrar no idioma oposto ao modo atual
 
   let total = 0;
@@ -191,56 +156,96 @@ export async function render(raiz, { args = [] } = {}) {
   let modoTraduzido = querTraducao;
   let ctrl = null;
   let rodandoTudo = false;
-  let destruirDoc = () => {};
-  let reajustarVisual = () => {};
-  let ir = async () => {};
-  let blocosDaPagina = async () => [];
-  let renderizarCanvas = async () => {};
-  let desenharTraducaoPdf = async () => {};
-  let ajustarBloco = () => {};
+  let termoDestaque = '';
+  let vis = null; // o leitor do tipo de arquivo (PDF ou texto)
 
-  // ----- topo -----
-  const topo = h('div', { class: 'doc-topo' },
-    h('div', { class: 'doc-topo-info' },
-      h('a', { class: 'botao pequeno', href: '#/biblioteca' }, '← Biblioteca'),
-      h('div', { class: 'doc-topo-titulo' },
-        h('h1', {}, it.titulo),
-        h('small', { class: 'suave' }, [ROTULO[it.tipo], it.fonte].filter(Boolean).join(' · ')))),
-    h('div', { class: 'linha', style: { gap: '6px' } },
-      h('a', { class: 'botao pequeno fantasma', href: `/arquivos/${it.arquivo}`, target: '_blank', rel: 'noopener', title: 'Abrir o arquivo original em outra aba' }, icone('abrir', 14), 'Abrir arquivo')));
+  // ----- elementos da tela -----
+  const botao = (ic, rotulo, onclick, classe = '') => h('button', { class: `lt-btn ${classe}`, title: rotulo, 'aria-label': rotulo, onclick },
+    icone(ic, 18), h('span', { class: 'lt-btn-rotulo' }, rotulo));
+  const sep = () => h('span', { class: 'lt-sep', 'aria-hidden': 'true' });
 
-  const ferramentas = h('div', { class: 'doc-ferramentas' });
-  const visual = h('div', { class: 'doc-visual' });
-  const conteudo = h('article', { class: 'doc-texto' });
-  const caixaTexto = h('div', { class: 'doc-texto-caixa' }, conteudo);
-
-  let caixaCanvas = null;
-
-  // ----- botões de tradução e modo -----
+  const contNotas = h('span', { class: 'lt-contador' });
+  const btnSumario = botao('lista', 'Sumário', () => abrirPainel('sumario'));
+  const btnNotas = botao('nota', 'Notas', () => abrirPainel('notas'));
+  btnNotas.append(contNotas);
+  const btnMarcadores = botao('marcador', 'Marcadores', () => abrirPainel('marcadores'));
+  const btnBusca = botao('busca', 'Buscar', () => abrirPainel('busca'));
+  const btnUma = botao('umapagina', '1 página', () => definirModoPaginas('uma'));
+  const btnDuas = botao('duaspaginas', '2 páginas', () => definirModoPaginas('duas'));
+  const btnMenos = botao('menos', 'Diminuir', () => mudarZoom(-1), 'so-icone');
+  const nivelZoom = h('span', { class: 'lt-zoom-nivel' }, '100%');
+  const btnMais = botao('mais', 'Aumentar', () => mudarZoom(1), 'so-icone');
+  const btnAjuste = botao('largura', 'Ajustar', () => alternarAjuste());
+  const botoesTema = TEMAS.map(([t, nome]) => h('button', { class: `lt-tema-op tema-${t}`, title: `Tema ${nome.toLowerCase()}`, 'aria-label': `Tema ${nome.toLowerCase()}`, onclick: () => definirTema(t) }, 'A'));
   const btnOriginal = h('button', { onclick: () => definirModo(false) }, 'Original');
   const btnTraduzido = h('button', { onclick: () => definirModo(true) }, 'Traduzido');
-  const seletorModo = h('div', { class: 'segmentado', 'aria-label': 'Idioma do texto' }, btnOriginal, btnTraduzido);
-
-  const btnTraduzir = h('button', { class: 'botao pequeno primario' }, icone('texto', 14), 'Traduzir esta parte');
-  const btnTraduzirTudo = h('button', { class: 'botao pequeno' }, icone('globo', 14), 'Traduzir o livro inteiro');
+  const seletorModo = h('div', { class: 'segmentado lt-segmentado', 'aria-label': 'Idioma do texto' }, btnOriginal, btnTraduzido);
+  const btnTraduzir = botao('globo', ehPdf ? 'Traduzir página' : 'Traduzir capítulo', () => traduzirAtual(), 'destaque');
+  const btnTraduzirTudo = botao('texto', 'Traduzir o livro', () => traduzirTudo());
   const btnParar = h('button', { class: 'botao pequeno perigo', hidden: true, onclick: pararTraducao }, 'Parar');
-  const estadoTrad = h('small', { class: 'suave' });
-  const progresso = h('div', { class: 'doc-progresso' });
-  const avisoTrad = h('div', { class: 'aviso info doc-aviso-traducao', hidden: !modoTraduzido }, icone('alerta', 15), h('div', {}, AVISO_TRAD));
-  btnTraduzir.addEventListener('click', () => traduzirAtual());
-  btnTraduzirTudo.addEventListener('click', () => traduzirTudo());
+  const btnMarcar = botao('marcador', 'Marcar página', () => alternarMarcador());
+  const btnTelaCheia = botao('telacheia', 'Tela cheia', () => alternarTelaCheia());
 
-  raiz.append(topo, h('div', { class: 'doc-corpo' },
-    h('section', { class: 'doc-principal' }, ferramentas, progresso, avisoTrad, visual)));
+  const estadoTrad = h('small', { class: 'suave lt-estado-texto' });
+  const progresso = h('div', { class: 'lt-progresso' });
+  const avisoTrad = h('div', { class: 'aviso info lt-aviso', hidden: !modoTraduzido }, icone('alerta', 15), h('div', {}, AVISO_TRAD));
+  const avisoPagina = h('div', { class: 'aviso info lt-aviso', hidden: true },
+    'Esta página não tem texto (pode ter sido escaneada como imagem), por isso não dá para traduzir nem buscar nela.');
 
-  // Setas do teclado viram a página (menos quando o foco está num campo ou há uma janela aberta).
-  const aoTecla = (e) => {
-    if (document.querySelector('.modal-fundo')) return;
-    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
-    if (e.key === 'ArrowLeft') ir(indice - 1);
-    else if (e.key === 'ArrowRight') ir(indice + 1);
-  };
-  window.addEventListener('keydown', aoTecla);
+  const painelTitulo = h('b', {});
+  const painelCorpo = h('div', { class: 'lt-painel-corpo' });
+  const painel = h('aside', { class: 'lt-painel', hidden: true },
+    h('div', { class: 'lt-painel-topo' }, painelTitulo,
+      h('button', { class: 'lt-btn so-icone', title: 'Fechar painel', 'aria-label': 'Fechar painel', onclick: () => abrirPainel(null) }, icone('x', 16))),
+    painelCorpo);
+
+  const palco = h('div', { class: 'lt-palco', tabindex: '-1' });
+  const setaEsq = h('button', { class: 'lt-seta esq', title: 'Página anterior (seta ←)', 'aria-label': 'Página anterior', onclick: () => ir(indice - passo()) }, icone('esquerda', 26));
+  const setaDir = h('button', { class: 'lt-seta dir', title: 'Próxima página (seta →)', 'aria-label': 'Próxima página', onclick: () => ir(indice + passo()) }, icone('direita', 26));
+  const palcoCaixa = h('div', { class: 'lt-palco-caixa' }, palco, setaEsq, setaDir);
+
+  const btnPrimeira = botao('primeira', 'Primeira página', () => ir(1), 'so-icone');
+  const btnAnterior = botao('esquerda', 'Anterior', () => ir(indice - passo()), 'so-icone');
+  const campoPagina = h('input', { class: 'lt-campo-pagina', type: 'number', min: '1', value: '1', 'aria-label': 'Ir para a página',
+    onchange: (e) => ir(Number(e.target.value) || 1) });
+  const deTotal = h('span', { class: 'suave lt-de-total' });
+  const btnProxima = botao('direita', 'Próxima', () => ir(indice + passo()), 'so-icone');
+  const btnUltima = botao('ultima', 'Última página', () => ir(total), 'so-icone');
+  const deslizante = h('input', { class: 'lt-deslizante', type: 'range', min: '1', value: '1', 'aria-label': 'Posição no livro',
+    onchange: (e) => ir(Number(e.target.value)) });
+  const porcento = h('span', { class: 'suave lt-porcento' });
+
+  const menuSel = h('div', { class: 'lt-menu-sel', hidden: true, role: 'toolbar', 'aria-label': 'Trecho selecionado' });
+
+  const lt = h('div', { class: 'lt', 'data-tema': prefs.tema, 'data-tipo': it.tipo },
+    h('header', { class: 'lt-topo' },
+      h('div', { class: 'lt-topo-linha' },
+        h('a', { class: 'lt-btn', href: '#/biblioteca', title: 'Voltar à Biblioteca' }, icone('esquerda', 18), h('span', { class: 'lt-btn-rotulo' }, 'Biblioteca')),
+        h('div', { class: 'lt-titulo' },
+          h('h1', { title: it.titulo }, it.titulo),
+          h('small', { class: 'suave' }, [ROTULO[it.tipo], it.fonte].filter(Boolean).join(' · '))),
+        h('div', { class: 'lt-grupo' },
+          h('a', { class: 'lt-btn so-icone', href: `/arquivos/${it.arquivo}`, target: '_blank', rel: 'noopener', title: 'Abrir o arquivo original em outra aba', 'aria-label': 'Abrir o arquivo original' }, icone('abrir', 18)),
+          btnMarcar, btnTelaCheia)),
+      h('div', { class: 'lt-ferramentas' },
+        h('div', { class: 'lt-grupo' }, btnSumario, btnNotas, btnMarcadores, btnBusca),
+        sep(),
+        h('div', { class: 'lt-grupo so-pdf' }, btnUma, btnDuas),
+        h('span', { class: 'lt-sep so-pdf', 'aria-hidden': 'true' }),
+        h('div', { class: 'lt-grupo' }, btnMenos, nivelZoom, btnMais, h('span', { class: 'so-pdf' }, btnAjuste)),
+        sep(),
+        h('div', { class: 'lt-grupo lt-temas', role: 'group', 'aria-label': 'Tema de leitura' }, botoesTema),
+        sep(),
+        h('div', { class: 'lt-grupo' }, seletorModo, btnTraduzir, btnTraduzirTudo, btnParar))),
+    h('div', { class: 'lt-estado' }, estadoTrad, progresso, avisoTrad, avisoPagina),
+    h('div', { class: 'lt-corpo' }, painel, palcoCaixa),
+    h('footer', { class: 'lt-rodape' },
+      h('div', { class: 'lt-grupo' }, btnPrimeira, btnAnterior,
+        h('label', { class: 'lt-pagina-rotulo' }, h('span', { class: 'suave' }, ehPdf ? 'Página' : 'Parte'), campoPagina, deTotal),
+        btnProxima, btnUltima),
+      deslizante, porcento),
+    menuSel);
+  raiz.append(lt);
 
   // ----- traduções -----
   async function salvarBloco(parte, bloco, texto, chave) {
@@ -253,29 +258,28 @@ export async function render(raiz, { args = [] } = {}) {
   const traducaoDe = (parte, bloco) => {
     const t = traducoes[String(parte)]?.[String(bloco)];
     if (!t?.texto) return '';
-    if (it.tipo === 'pdf' && t.chave !== blocosCache.get(parte)?.[bloco]?.chave) return '';
+    if (ehPdf && t.chave !== blocosCache.get(parte)?.[bloco]?.chave) return '';
     return t.texto;
   };
 
   function podeMostrarTraducao(parte, bloco) {
-    const texto = traducaoDe(parte, bloco);
-    if (!texto) return false;
+    if (!traducaoDe(parte, bloco)) return false;
     const invertido = alternados.has(`${parte}:${bloco}`);
     return modoTraduzido ? !invertido : invertido;
   }
 
   function atualizarBlocoEl(parte, bloco, dados, el) {
     const texto = traducaoDe(parte, bloco);
-    const mostrando = texto && podeMostrarTraducao(parte, bloco);
+    const mostrando = !!texto && podeMostrarTraducao(parte, bloco);
     // No PDF o bloco fica por cima da página: sem tradução à mostra, fica vazio e a página aparece.
     const sobrePagina = el.classList.contains('doc-sobre-bloco');
     el.textContent = mostrando ? texto : sobrePagina ? '' : dados.texto;
-    el.classList.toggle('traduzido', !!mostrando);
+    el.classList.toggle('traduzido', mostrando);
     el.classList.toggle('tem-traducao', !!texto);
     el.classList.remove('traduzindo');
     if (texto) el.title = mostrando ? 'Clique para ver o texto original' : 'Clique para ver a tradução';
     else el.removeAttribute('title');
-    ajustarBloco(el);
+    vis?.aposBloco?.(parte, bloco, el, mostrando);
   }
 
   function alternarBloco(parte, bloco, dados, el) {
@@ -290,15 +294,9 @@ export async function render(raiz, { args = [] } = {}) {
     if (modoTraduzido === verTraducao) return;
     modoTraduzido = verTraducao;
     alternados.clear();
-    atualizarBotoesModo();
+    atualizarBotoes();
     mostrarParte();
-    if (verTraducao) estadoTrad.textContent = DICA_ORIGINAL;
-  }
-
-  function atualizarBotoesModo() {
-    btnOriginal.classList.toggle('ativo', !modoTraduzido);
-    btnTraduzido.classList.toggle('ativo', modoTraduzido);
-    avisoTrad.hidden = !modoTraduzido;
+    estadoTrad.textContent = verTraducao ? DICA_ORIGINAL : '';
   }
 
   async function traduzirBloco(parte, bloco, sinal) {
@@ -317,12 +315,12 @@ export async function render(raiz, { args = [] } = {}) {
         sinal,
         onTexto: (pedaco) => {
           parcial += pedaco;
-          if (indice !== parte || !modoTraduzido || alternados.has(chave)) return;
+          if (!vis.visiveis().includes(parte) || !modoTraduzido || alternados.has(chave)) return;
           const alvo = elementos.get(chave);
           if (alvo) {
             alvo.el.textContent = parcial;
             alvo.el.classList.add('traduzindo', 'tem-traducao');
-            ajustarBloco(alvo.el);
+            vis.ajustarBloco?.(alvo.el);
           }
         },
       });
@@ -350,8 +348,8 @@ export async function render(raiz, { args = [] } = {}) {
       };
       fechar = modal(h('div', { class: 'pilha' },
         h('h3', { style: { margin: 0 } }, 'Traduzir o livro inteiro?'),
-        h('p', {}, `São ${quantidade} página(s)/capítulo(s). A IA do computador traduz um parágrafo de cada vez: um livro grande pode levar bastante tempo.`),
-        h('p', { class: 'suave' }, 'O texto original é substituído pela tradução no próprio documento. Clique em um parágrafo traduzido para ver o original. Páginas já traduzidas são puladas, e você pode parar quando quiser.'),
+        h('p', {}, `São ${quantidade} ${ehPdf ? 'página(s)' : 'parte(s)'}. A IA do computador traduz um trecho de cada vez: um livro grande pode levar bastante tempo.`),
+        h('p', { class: 'suave' }, 'A tradução aparece no lugar do texto original. Clique em um trecho traduzido para ver o original. O que já foi traduzido é pulado, e você pode parar quando quiser.'),
         h('div', { class: 'linha', style: { justifyContent: 'flex-end', gap: '8px' } },
           h('button', { class: 'botao', onclick: () => responder(false) }, 'Cancelar'),
           h('button', { class: 'botao primario', onclick: () => responder(true) }, 'Traduzir o livro inteiro'))), { largura: 520 });
@@ -363,34 +361,45 @@ export async function render(raiz, { args = [] } = {}) {
     for (let bloco = 0; bloco < blocos.length; bloco++) {
       if (sinal.aborted) throw new DOMException('Cancelado', 'AbortError');
       if (blocos[bloco].tipo === 'imagem' || traducaoDe(parte, bloco)) continue;
-      estadoTrad.textContent = `Traduzindo ${rotuloDe(parte)} · parágrafo ${bloco + 1} de ${blocos.length}…`;
+      estadoTrad.textContent = `Traduzindo ${rotuloLongo(parte)} · trecho ${bloco + 1} de ${blocos.length}…`;
       await traduzirBloco(parte, bloco, sinal);
     }
+  }
+
+  function entrarNoModoTraduzido() {
+    if (modoTraduzido) return false;
+    modoTraduzido = true;
+    alternados.clear();
+    atualizarBotoes();
+    return true;
+  }
+
+  function travarTraducao(sim) {
+    btnTraduzir.disabled = sim;
+    btnTraduzirTudo.disabled = sim;
+    btnParar.hidden = !sim;
   }
 
   async function traduzirAtual() {
     if (ctrl) return;
     const meu = new AbortController();
     ctrl = meu;
-    btnTraduzir.disabled = true;
-    btnTraduzirTudo.disabled = true;
-    btnParar.hidden = false;
+    travarTraducao(true);
     try {
-      if (!modoTraduzido) {
-        modoTraduzido = true;
-        alternados.clear();
-        atualizarBotoesModo();
+      if (entrarNoModoTraduzido()) await mostrarParte();
+      const alvo = vis.visiveis();
+      const temTexto = (await Promise.all(alvo.map(obterBlocos))).some((b) => b.length);
+      if (!temTexto) {
+        estadoTrad.textContent = ehPdf ? 'Esta página não tem texto para traduzir (pode ser uma imagem escaneada).' : 'Este trecho não tem texto para traduzir.';
+        return;
       }
-      await mostrarParte();
-      await traduzirParte(indice, meu.signal);
+      for (const parte of alvo) await traduzirParte(parte, meu.signal);
       estadoTrad.textContent = `Tradução pronta. ${DICA_ORIGINAL}`;
     } catch (e) {
       if (e.name !== 'AbortError') estadoTrad.textContent = `Não foi possível traduzir: ${e.message}`;
     } finally {
       if (ctrl === meu) ctrl = null;
-      btnTraduzir.disabled = false;
-      btnTraduzirTudo.disabled = false;
-      btnParar.hidden = true;
+      travarTraducao(false);
     }
   }
 
@@ -401,33 +410,21 @@ export async function render(raiz, { args = [] } = {}) {
     const meu = new AbortController();
     ctrl = meu;
     rodandoTudo = true;
-    btnTraduzir.disabled = true;
-    btnTraduzirTudo.disabled = true;
-    btnParar.hidden = false;
+    travarTraducao(true);
     let interrompeu = false;
     try {
-      if (!modoTraduzido) {
-        modoTraduzido = true;
-        alternados.clear();
-        atualizarBotoesModo();
-      }
-      await mostrarParte();
-      // Começa pela página/capítulo aberto, para o usuário ver a tradução chegando na hora.
-      const blocosAtuais = await obterBlocos(indice);
-      if (blocosAtuais.some((b, bloco) => b.tipo !== 'imagem' && !traducaoDe(indice, bloco))) {
-        progresso.replaceChildren(barra(0), h('small', { class: 'suave' }, `${rotuloDe(indice)} · começando por esta página`));
-        await traduzirParte(indice, meu.signal);
-      }
-      for (let parte = 1; parte <= total; parte++) {
+      if (entrarNoModoTraduzido()) await mostrarParte();
+      // Começa pelo que está aberto, para o usuário ver a tradução chegando na hora.
+      const ordem = [...vis.visiveis(), ...Array.from({ length: total }, (_, k) => k + 1).filter((p) => !vis.visiveis().includes(p))];
+      for (let k = 0; k < ordem.length; k++) {
         if (meu.signal.aborted) {
           interrompeu = true;
           break;
         }
-        if (parte === indice) continue;
+        const parte = ordem[k];
         const blocos = await obterBlocos(parte);
-        const falta = blocos.some((b, bloco) => b.tipo !== 'imagem' && !traducaoDe(parte, bloco));
-        if (!falta) continue;
-        progresso.replaceChildren(barra(parte / total), h('small', { class: 'suave' }, `${rotuloDe(parte)} · parte ${parte} de ${total}`));
+        if (!blocos.some((b, bloco) => b.tipo !== 'imagem' && !traducaoDe(parte, bloco))) continue;
+        progresso.replaceChildren(barra(k / ordem.length), h('small', { class: 'suave' }, `${rotuloLongo(parte)} · ${k + 1} de ${ordem.length}`));
         await traduzirParte(parte, meu.signal);
       }
     } catch (e) {
@@ -435,110 +432,511 @@ export async function render(raiz, { args = [] } = {}) {
         toast(`A tradução parou: ${e.message}`, 'erro');
         estadoTrad.textContent = `A tradução parou: ${e.message}`;
       } else interrompeu = true;
+      interrompeu = true;
     } finally {
       rodandoTudo = false;
-      btnTraduzir.disabled = false;
-      btnTraduzirTudo.disabled = false;
-      btnParar.hidden = true;
+      travarTraducao(false);
       progresso.replaceChildren();
       if (ctrl === meu) ctrl = null;
       if (!interrompeu) estadoTrad.textContent = `Tradução do livro concluída. ${DICA_ORIGINAL}`;
     }
   }
 
-  // ----- navegação e renderização -----
-  function rotuloDe(n) {
-    return it.tipo === 'pdf' ? `Página ${n} de ${total}` : partes[n - 1]?.titulo || `Parte ${n} de ${total}`;
-  }
+  // ----- navegação -----
+  const passo = () => vis?.passo() || 1;
+  const rotuloLongo = (n) => (ehPdf ? `página ${n}` : partes[n - 1]?.titulo || `parte ${n}`);
+  const rotuloCurto = (n) => (ehPdf ? `p. ${n}` : partes[n - 1]?.titulo || `Parte ${n}`);
 
   async function obterBlocos(parte) {
     if (blocosCache.has(parte)) return blocosCache.get(parte);
-    let blocos;
-    if (it.tipo === 'pdf') blocos = await blocosDaPagina(parte);
-    else blocos = partes[parte - 1]?.blocos || [];
+    const blocos = await vis.blocos(parte);
     blocosCache.set(parte, blocos);
     return blocos;
   }
 
-  async function renderizarTexto(parte) {
-    const blocos = await obterBlocos(parte);
-    if (parte !== indice) return;
-    elementos.clear();
-    conteudo.replaceChildren();
-    if (!blocos.length) {
-      conteudo.append(aviso('info', 'Este trecho não tem texto para mostrar.'));
+  async function mostrarParte() {
+    esconderMenu();
+    await vis.mostrar(indice);
+    atualizarBotoes();
+  }
+
+  async function ir(n, { forcar = false } = {}) {
+    if (!total || !vis) return;
+    const alvo = vis.normalizar(Math.min(total, Math.max(1, Math.round(n) || 1)));
+    if (alvo === indice && !forcar) {
+      atualizarRodape();
       return;
     }
-    blocos.forEach((dados, bloco) => {
-      if (dados.tipo === 'imagem') {
-        conteudo.append(h('img', { class: 'doc-imagem', src: dados.src, alt: 'Ilustração do livro', loading: 'lazy' }));
+    indice = alvo;
+    ultima = indice;
+    salvarLeitura();
+    atualizarRodape();
+    await mostrarParte();
+    palco.scrollTop = 0;
+  }
+
+  function atualizarRodape() {
+    const vistos = vis ? vis.visiveis() : [indice];
+    campoPagina.max = String(total);
+    campoPagina.value = String(indice);
+    deTotal.textContent = vistos.length > 1 ? `–${vistos[vistos.length - 1]} de ${total}` : `de ${total}`;
+    deslizante.max = String(Math.max(1, total));
+    deslizante.value = String(indice);
+    porcento.textContent = total ? `${Math.round((vistos[vistos.length - 1] / total) * 100)}%` : '';
+    const noInicio = indice <= 1;
+    const noFim = vistos[vistos.length - 1] >= total;
+    btnPrimeira.disabled = noInicio;
+    btnAnterior.disabled = noInicio;
+    setaEsq.disabled = noInicio;
+    btnProxima.disabled = noFim;
+    btnUltima.disabled = noFim;
+    setaDir.disabled = noFim;
+    const marcada = marcadores.has(indice);
+    btnMarcar.classList.toggle('ativo', marcada);
+    btnMarcar.title = marcada ? 'Tirar o marcador desta página' : 'Marcar esta página';
+  }
+
+  function atualizarBotoes() {
+    btnOriginal.classList.toggle('ativo', !modoTraduzido);
+    btnTraduzido.classList.toggle('ativo', modoTraduzido);
+    avisoTrad.hidden = !modoTraduzido;
+    btnUma.classList.toggle('ativo', prefs.modo !== 'duas');
+    btnDuas.classList.toggle('ativo', prefs.modo === 'duas');
+    btnAjuste.querySelector('.lt-btn-rotulo').textContent = prefs.ajuste === 'pagina' ? 'Página inteira' : 'Largura';
+    btnAjuste.title = prefs.ajuste === 'pagina' ? 'Mostrando a página inteira (clique para ajustar à largura)' : 'Ajustado à largura (clique para ver a página inteira)';
+    botoesTema.forEach((b, k) => b.classList.toggle('ativo', TEMAS[k][0] === prefs.tema));
+    contNotas.textContent = notas.length ? String(notas.length) : '';
+    atualizarRodape();
+  }
+
+  function definirModoPaginas(modo) {
+    if (prefs.modo === modo) return;
+    prefs.modo = modo;
+    gravarPrefs(prefs);
+    indice = vis.normalizar(indice);
+    atualizarBotoes();
+    mostrarParte();
+  }
+
+  function mudarZoom(d) {
+    if (ehPdf) prefs.fator = Math.min(4, Math.max(0.3, Number((prefs.fator * (d > 0 ? 1.15 : 1 / 1.15)).toFixed(3))));
+    else prefs.fonte = Math.min(32, Math.max(13, prefs.fonte + d));
+    gravarPrefs(prefs);
+    vis.zoom?.();
+  }
+
+  function alternarAjuste() {
+    prefs.ajuste = prefs.ajuste === 'pagina' ? 'largura' : 'pagina';
+    prefs.fator = 1;
+    gravarPrefs(prefs);
+    atualizarBotoes();
+    vis.zoom?.();
+  }
+
+  function definirTema(tema) {
+    prefs.tema = tema;
+    lt.dataset.tema = tema;
+    gravarPrefs(prefs);
+    atualizarBotoes();
+  }
+
+  function alternarMarcador() {
+    if (marcadores.has(indice)) marcadores.delete(indice);
+    else marcadores.add(indice);
+    salvarLeitura();
+    atualizarRodape();
+    if (painelAtual === 'marcadores') desenharPainel();
+    toast(marcadores.has(indice) ? `Marcador colocado na ${rotuloLongo(indice)}.` : 'Marcador retirado.');
+  }
+
+  // ----- tela cheia -----
+  function aoTelaCheia() {
+    const cheio = !!document.fullscreenElement || lt.classList.contains('lt-foco');
+    lt.classList.toggle('lt-cheio', cheio);
+    btnTelaCheia.replaceChildren(icone(cheio ? 'sairtela' : 'telacheia', 18), h('span', { class: 'lt-btn-rotulo' }, cheio ? 'Sair da tela cheia' : 'Tela cheia'));
+    if (!document.fullscreenElement) lt.classList.remove('lt-foco');
+    vis?.reajustar();
+  }
+  async function alternarTelaCheia() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (lt.classList.contains('lt-cheio')) {
+      lt.classList.remove('lt-foco', 'lt-cheio');
+      aoTelaCheia();
+      return;
+    }
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      // Sem tela cheia do navegador: ocupa a janela inteira mesmo assim.
+      lt.classList.add('lt-foco');
+      aoTelaCheia();
+    }
+  }
+  document.addEventListener('fullscreenchange', aoTelaCheia);
+
+  // ----- painel lateral: sumário, notas, marcadores, busca -----
+  let painelAtual = null;
+  let sumario = null;
+  const busca = { termo: '', resultados: [], ctrl: null, estado: '' };
+
+  function abrirPainel(nome) {
+    painelAtual = painelAtual === nome ? null : nome;
+    painel.hidden = !painelAtual;
+    [[btnSumario, 'sumario'], [btnNotas, 'notas'], [btnMarcadores, 'marcadores'], [btnBusca, 'busca']]
+      .forEach(([b, n]) => b.classList.toggle('ativo', painelAtual === n));
+    desenharPainel();
+    vis?.reajustar();
+  }
+
+  function desenharPainel() {
+    if (!painelAtual) return;
+    painelTitulo.textContent = { sumario: 'Sumário', notas: 'Notas e realces', marcadores: 'Marcadores', busca: 'Buscar no livro' }[painelAtual];
+    if (painelAtual === 'sumario') desenharSumario();
+    else if (painelAtual === 'notas') desenharNotasPainel();
+    else if (painelAtual === 'marcadores') desenharMarcadores();
+    else desenharBusca();
+  }
+
+  async function desenharSumario() {
+    painelCorpo.replaceChildren(h('small', { class: 'suave' }, 'Carregando o sumário…'));
+    sumario ||= await vis.sumario().catch(() => []);
+    if (painelAtual !== 'sumario') return;
+    const lista = (itens, nivel) => h('ul', { class: 'lt-sumario' }, itens.map((i) => h('li', {},
+      h('button', { class: `lt-item${i.pagina && vis.visiveis().includes(i.pagina) ? ' atual' : ''}`, style: { paddingLeft: `${8 + nivel * 14}px` }, disabled: !i.pagina, onclick: () => ir(i.pagina) },
+        h('span', {}, i.titulo || 'Sem título'), i.pagina && ehPdf ? h('small', { class: 'suave' }, String(i.pagina)) : null),
+      i.filhos?.length ? lista(i.filhos, nivel + 1) : null)));
+    painelCorpo.replaceChildren(sumario.length ? lista(sumario, 0) : h('p', { class: 'suave' }, 'Este livro não tem sumário. Use a busca ou a barra de páginas embaixo.'));
+  }
+
+  const ordemNota = (a, b) => a.pagina - b.pagina || (a.retangulos?.[0]?.y ?? a.inicio ?? 0) - (b.retangulos?.[0]?.y ?? b.inicio ?? 0);
+
+  function desenharNotasPainel() {
+    const filtro = h('input', { type: 'search', class: 'lt-filtro', placeholder: 'Filtrar notas…', 'aria-label': 'Filtrar notas' });
+    const lista = h('div', { class: 'lt-lista' });
+    const pintar = () => {
+      const q = semAcento(filtro.value);
+      const itens = [...notas].sort(ordemNota).filter((n) => !q || semAcento(`${n.trecho} ${n.nota}`).includes(q));
+      lista.replaceChildren(...(itens.length ? itens.map(cartaoNota)
+        : [h('p', { class: 'suave' }, notas.length ? 'Nenhuma nota com esse texto.' : 'Selecione um trecho do livro com o mouse para realçar ou escrever uma nota.')]));
+    };
+    filtro.addEventListener('input', pintar);
+    pintar();
+    painelCorpo.replaceChildren(filtro, lista,
+      h('a', { class: 'lt-link', href: '#/notas' }, 'Ver as notas de todos os livros'));
+  }
+
+  function cartaoNota(n) {
+    return h('div', { class: `lt-nota cor-${n.cor}` },
+      h('div', { class: 'lt-nota-topo' },
+        h('button', { class: 'lt-link', onclick: () => irParaNota(n) }, rotuloCurto(n.pagina)),
+        h('span', { class: 'lt-nota-acoes' },
+          h('button', { class: 'lt-btn so-icone mini', title: 'Editar nota', 'aria-label': 'Editar nota', onclick: () => editarNota(n) }, icone('lapis', 14)),
+          h('button', { class: 'lt-btn so-icone mini', title: 'Apagar', 'aria-label': 'Apagar nota', onclick: () => apagarNota(n) }, icone('lixo', 14)))),
+      n.trecho ? h('blockquote', { onclick: () => irParaNota(n), title: 'Ir para este trecho' }, n.trecho) : null,
+      n.nota ? h('p', {}, n.nota) : h('button', { class: 'lt-link suave', onclick: () => editarNota(n) }, '+ Escrever uma nota'));
+  }
+
+  function desenharMarcadores() {
+    const lista = [...marcadores].sort((a, b) => a - b);
+    painelCorpo.replaceChildren(
+      h('button', { class: 'botao pequeno', onclick: alternarMarcador }, icone('marcador', 14), marcadores.has(indice) ? 'Tirar o marcador desta página' : 'Marcar esta página'),
+      lista.length
+        ? h('div', { class: 'lt-lista' }, lista.map((p) => h('div', { class: 'lt-item-linha' },
+          h('button', { class: `lt-item${vis.visiveis().includes(p) ? ' atual' : ''}`, onclick: () => ir(p) }, icone('marcador', 14), h('span', {}, ehPdf ? `Página ${p}` : rotuloCurto(p))),
+          h('button', { class: 'lt-btn so-icone mini', title: 'Tirar marcador', 'aria-label': 'Tirar marcador', onclick: () => {
+            marcadores.delete(p);
+            salvarLeitura();
+            atualizarRodape();
+            desenharMarcadores();
+          } }, icone('x', 14)))))
+        : h('p', { class: 'suave' }, 'Nenhuma página marcada ainda. Use o botão "Marcar página" no alto para guardar uma página importante.'));
+  }
+
+  function itemResultado(r) {
+    return h('button', { class: 'lt-item lt-resultado', onclick: () => ir(r.pagina) },
+      h('small', { class: 'suave' }, rotuloCurto(r.pagina)),
+      h('span', {}, r.antes ? `…${r.antes}` : '', h('mark', {}, r.achado), r.depois ? `${r.depois}…` : ''));
+  }
+
+  function desenharBusca() {
+    const campo = h('input', { type: 'search', class: 'lt-filtro', placeholder: 'Palavra ou frase…', value: busca.termo, 'aria-label': 'Buscar no livro' });
+    const estado = h('small', { class: 'suave' }, busca.estado);
+    const lista = h('div', { class: 'lt-lista' }, busca.resultados.map(itemResultado));
+    const executar = async () => {
+      busca.ctrl?.abort();
+      const meu = new AbortController();
+      busca.ctrl = meu;
+      busca.termo = campo.value.trim();
+      busca.resultados = [];
+      lista.replaceChildren();
+      termoDestaque = busca.termo.length >= 2 ? busca.termo : '';
+      vis.marcarAchados?.();
+      if (busca.termo.length < 2) {
+        busca.estado = 'Digite pelo menos 2 letras.';
+        estado.textContent = busca.estado;
         return;
       }
-      const chave = `${parte}:${bloco}`;
-      const tag = dados.tipo === 'titulo' ? (dados.nivel && dados.nivel <= 2 ? 'h2' : 'h3') : 'p';
-      const texto = traducaoDe(parte, bloco);
-      const mostrando = texto && podeMostrarTraducao(parte, bloco);
-      const el = h(tag, {
-        class: `doc-bloco${texto ? ' tem-traducao' : ''}${mostrando ? ' traduzido' : ''}`,
-        title: texto ? (mostrando ? 'Clique para ver o texto original' : 'Clique para ver a tradução') : null,
-      }, mostrando ? texto : dados.texto);
-      el.addEventListener('click', () => alternarBloco(parte, bloco, dados, el));
-      elementos.set(chave, { el, dados });
-      conteudo.append(el);
-    });
+      estado.textContent = 'Buscando…';
+      await vis.buscar(busca.termo, (r) => {
+        busca.resultados.push(r);
+        if (painelAtual === 'busca') lista.append(itemResultado(r));
+      }, meu.signal, (feito, de) => {
+        estado.textContent = `Buscando… ${feito} de ${de}`;
+      });
+      if (meu.signal.aborted) return;
+      const n = busca.resultados.length;
+      busca.estado = n ? `${n}${n >= MAX_RESULTADOS ? '+' : ''} resultado(s).` : 'Nada encontrado.';
+      estado.textContent = busca.estado;
+    };
+    campo.addEventListener('keydown', (e) => e.key === 'Enter' && executar());
+    painelCorpo.replaceChildren(
+      h('div', { class: 'linha', style: { gap: '6px' } }, campo, h('button', { class: 'botao pequeno', onclick: executar }, 'Buscar')),
+      estado, lista);
+    setTimeout(() => campo.focus(), 30);
+    return executar;
   }
 
-  async function mostrarParte() {
-    // PDF: a página continua desenhada como no arquivo; a tradução aparece por cima, no lugar do texto original.
-    if (it.tipo === 'pdf') {
-      await renderizarCanvas(indice);
-      await desenharTraducaoPdf(indice);
+  // ----- notas e realces -----
+  function atualizarNotasNaTela() {
+    vis.desenharNotas();
+    contNotas.textContent = notas.length ? String(notas.length) : '';
+    if (painelAtual === 'notas') desenharNotasPainel();
+  }
+
+  async function irParaNota(n) {
+    await ir(n.pagina);
+    vis.piscarNota?.(n.id);
+  }
+
+  async function apagarNota(n) {
+    if (n.nota && !(await confirmar('Apagar esta nota? O texto que você escreveu será perdido.', { botao: 'Apagar', perigo: true }))) return;
+    const k = notas.indexOf(n);
+    if (k >= 0) notas.splice(k, 1);
+    salvarLeitura();
+    atualizarNotasNaTela();
+  }
+
+  function editarNota(n) {
+    let cor = n.cor;
+    const campo = h('textarea', { class: 'lt-nota-campo', rows: '6', placeholder: 'Escreva sua nota sobre este trecho…' });
+    campo.value = n.nota || '';
+    const cores = h('div', { class: 'lt-cores' }, CORES.map(([c, nome]) => h('button', {
+      class: `lt-cor cor-${c}${c === cor ? ' ativa' : ''}`, title: nome, 'aria-label': `Realce ${nome.toLowerCase()}`,
+      onclick: (e) => {
+        cor = c;
+        cores.querySelectorAll('.lt-cor').forEach((b) => b.classList.toggle('ativa', b === e.currentTarget));
+      },
+    })));
+    let fechar;
+    const salvar = () => {
+      n.cor = cor;
+      n.nota = campo.value.trim();
+      n.atualizado = Date.now();
+      salvarLeitura();
+      fechar();
+      atualizarNotasNaTela();
+    };
+    fechar = modal(h('div', { class: 'pilha' },
+      h('h3', { style: { margin: 0 } }, `Nota · ${rotuloLongo(n.pagina)}`),
+      n.trecho ? h('blockquote', { class: 'lt-citacao' }, n.trecho) : null,
+      h('div', { class: 'linha', style: { gap: '10px' } }, h('small', { class: 'suave' }, 'Cor do realce'), cores),
+      campo,
+      h('div', { class: 'linha entre' },
+        h('button', { class: 'botao pequeno perigo', onclick: () => {
+          fechar();
+          apagarNota(n);
+        } }, icone('lixo', 14), 'Apagar'),
+        h('div', { class: 'linha', style: { gap: '8px' } },
+          h('button', { class: 'botao', onclick: () => fechar() }, 'Cancelar'),
+          h('button', { class: 'botao primario', onclick: salvar }, 'Salvar')))), { largura: 540 });
+    campo.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) salvar();
+    });
+    setTimeout(() => campo.focus(), 30);
+  }
+
+  // ----- menu do trecho selecionado -----
+  let selecaoAtual = null;
+  const manter = (e) => e.preventDefault(); // não perde a seleção ao clicar no menu
+
+  function esconderMenu() {
+    menuSel.hidden = true;
+    selecaoAtual = null;
+  }
+
+  function mostrarMenuSelecao(info, ret) {
+    selecaoAtual = info;
+    menuSel.replaceChildren(
+      ...CORES.map(([c, nome]) => h('button', { class: `lt-cor cor-${c}`, title: `Realçar em ${nome.toLowerCase()}`, 'aria-label': `Realçar em ${nome.toLowerCase()}`, onmousedown: manter, onclick: () => criarNota(c, false) })),
+      h('span', { class: 'lt-sep' }),
+      h('button', { class: 'lt-btn', onmousedown: manter, onclick: () => criarNota('amarelo', true) }, icone('nota', 16), h('span', { class: 'lt-btn-rotulo' }, 'Nota')),
+      h('button', { class: 'lt-btn', onmousedown: manter, onclick: traduzirSelecao }, icone('globo', 16), h('span', { class: 'lt-btn-rotulo' }, 'Traduzir')),
+      h('button', { class: 'lt-btn', onmousedown: manter, onclick: copiarSelecao }, icone('copiar', 16), h('span', { class: 'lt-btn-rotulo' }, 'Copiar')),
+      h('button', { class: 'lt-btn', onmousedown: manter, onclick: buscarSelecao }, icone('busca', 16), h('span', { class: 'lt-btn-rotulo' }, 'Buscar')));
+    menuSel.hidden = false;
+    const mw = menuSel.offsetWidth;
+    const mh = menuSel.offsetHeight;
+    let x = ret.left + ret.width / 2 - mw / 2;
+    let y = ret.top - mh - 10;
+    if (y < 8) y = Math.min(window.innerHeight - mh - 8, ret.bottom + 10);
+    x = Math.max(8, Math.min(window.innerWidth - mw - 8, x));
+    menuSel.style.left = `${Math.round(x)}px`;
+    menuSel.style.top = `${Math.round(y)}px`;
+  }
+
+  function criarNota(cor, abrirEditor) {
+    const info = selecaoAtual;
+    if (!info) return;
+    const agora = Date.now();
+    const n = { id: novoId(), cor, nota: '', criado: agora, atualizado: agora, ...info };
+    notas.push(n);
+    salvarLeitura();
+    window.getSelection()?.removeAllRanges();
+    esconderMenu();
+    atualizarNotasNaTela();
+    if (abrirEditor) editarNota(n);
+  }
+
+  function traduzirSelecao() {
+    const info = selecaoAtual;
+    if (!info) return;
+    esconderMenu();
+    const caixa = caixaTraducao();
+    modal(h('div', { class: 'pilha' },
+      h('h3', { style: { margin: 0 } }, 'Tradução do trecho'),
+      h('blockquote', { class: 'lt-citacao' }, info.trecho),
+      caixa.elemento), { largura: 620 });
+    caixa.traduzir(info.trecho);
+  }
+
+  async function copiarSelecao() {
+    const info = selecaoAtual;
+    if (!info) return;
+    try {
+      await navigator.clipboard.writeText(info.trecho);
+    } catch {
+      document.execCommand('copy');
+    }
+    esconderMenu();
+    toast('Trecho copiado.');
+  }
+
+  function buscarSelecao() {
+    const info = selecaoAtual;
+    if (!info) return;
+    esconderMenu();
+    busca.termo = info.trecho.slice(0, 80);
+    if (painelAtual !== 'busca') abrirPainel('busca');
+    const executar = desenharBusca();
+    executar();
+  }
+
+  function verificarSelecao() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      esconderMenu();
       return;
     }
-    await renderizarTexto(indice);
+    const range = sel.getRangeAt(0);
+    if (!palco.contains(range.commonAncestorContainer)) return;
+    const info = vis.infoSelecao(range);
+    if (!info?.trecho) {
+      esconderMenu();
+      return;
+    }
+    mostrarMenuSelecao(info, range.getBoundingClientRect());
   }
 
-  ir = async (n) => {
-    if (!total || n < 1 || n > total || n === indice) return;
-    indice = n;
-    atualizarFerramentas();
-    await mostrarParte();
-    const caixa = conteudo.parentElement;
-    if (caixa) caixa.scrollTop = 0;
+  palco.addEventListener('mouseup', () => setTimeout(verificarSelecao, 0));
+  palco.addEventListener('touchend', () => setTimeout(verificarSelecao, 250));
+  palco.addEventListener('keyup', (e) => e.shiftKey && verificarSelecao());
+  palco.addEventListener('scroll', () => esconderMenu(), { passive: true });
+  palco.addEventListener('click', (e) => {
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const n = vis.notaNoClique?.(e);
+    if (n) editarNota(n);
+  });
+  const aoApertar = (e) => {
+    if (!menuSel.hidden && !menuSel.contains(e.target)) esconderMenu();
+  };
+  document.addEventListener('mousedown', aoApertar);
+
+  // Teclado: setas viram a página, + e − mudam o zoom (menos quando o foco está num campo ou há uma janela aberta).
+  const aoTecla = (e) => {
+    if (document.querySelector('.modal-fundo')) return;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      ir(indice - passo());
+    } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+      e.preventDefault();
+      ir(indice + passo());
+    } else if (e.key === 'Home') ir(1);
+    else if (e.key === 'End') ir(total);
+    else if (e.key === '+' || e.key === '=') mudarZoom(1);
+    else if (e.key === '-') mudarZoom(-1);
+    else if (e.key === 'Escape') esconderMenu();
+  };
+  window.addEventListener('keydown', aoTecla);
+
+  let esperaResize;
+  const observador = new ResizeObserver(() => {
+    clearTimeout(esperaResize);
+    esperaResize = setTimeout(() => vis?.reajustar(), 200);
+  });
+
+  const limpar = () => {
+    ctrl?.abort();
+    busca.ctrl?.abort();
+    if (pendente) salvarLeitura(true);
+    clearTimeout(esperaResize);
+    observador.disconnect();
+    window.removeEventListener('keydown', aoTecla);
+    document.removeEventListener('mousedown', aoApertar);
+    document.removeEventListener('fullscreenchange', aoTelaCheia);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    vis?.destruir();
   };
 
-  let atualizarFerramentas = () => {};
-
-  // ----- escolhe o tipo de leitor -----
+  // ----- monta o leitor do tipo de arquivo -----
   try {
-    if (it.tipo === 'pdf') await montarPdf();
-    else await montarTexto();
+    vis = ehPdf ? await criarLeitorPdf() : await criarLeitorTexto();
   } catch (e) {
-    visual.replaceChildren(
+    palco.replaceChildren(h('div', { class: 'lt-erro' },
       aviso('erro', e.message),
       h('div', { class: 'linha', style: { gap: '8px' } },
         h('a', { class: 'botao pequeno', href: '#/configurar' }, 'Instalar conteúdo'),
-        h('a', { class: 'botao pequeno', href: `/arquivos/${it.arquivo}`, target: '_blank', rel: 'noopener' }, 'Abrir o arquivo original')),
-    );
-    ferramentas.replaceChildren();
-    return () => {
-      window.removeEventListener('keydown', aoTecla);
-      destruirDoc();
-    };
+        h('a', { class: 'botao pequeno', href: `/arquivos/${it.arquivo}`, target: '_blank', rel: 'noopener' }, 'Abrir o arquivo original'))));
+    return limpar;
   }
 
-  atualizarBotoesModo();
+  const inicial = paginaPedida ? vis.paginaDe(paginaPedida) : leitura.ultima || 1;
+  indice = vis.normalizar(Math.min(total, Math.max(1, inicial)));
+  if (indice !== ultima) {
+    ultima = indice;
+    salvarLeitura();
+  }
+  atualizarBotoes();
   await mostrarParte();
+  observador.observe(palco);
   if (modoTraduzido) estadoTrad.textContent = DICA_ORIGINAL;
+  if (notaPedida) {
+    const n = notas.find((x) => x.id === notaPedida);
+    if (n) vis.piscarNota?.(n.id);
+  }
   if (querTraducao) traduzirAtual();
-  return () => {
-    ctrl?.abort();
-    window.removeEventListener('keydown', aoTecla);
-    destruirDoc();
-  };
+  palco.focus({ preventScroll: true });
+  return limpar;
 
-  // ----- PDF (pdf.js) -----
-  async function montarPdf() {
+  // =====================================================================
+  // PDF (pdf.js): páginas desenhadas, texto selecionável por cima, realces e tradução no lugar do original.
+  // =====================================================================
+  async function criarLeitorPdf() {
     let pdfjs;
     try {
       pdfjs = await import('/vendor/pdfjs/pdf.min.mjs');
@@ -549,44 +947,117 @@ export async function render(raiz, { args = [] } = {}) {
     const doc = await pdfjs.getDocument({ url: `/arquivos/${it.arquivo}`, isEvalSupported: false }).promise;
     total = doc.numPages;
 
-    const canvas = h('canvas', { class: 'doc-pagina', role: 'img', 'aria-label': `Página ${indice} de ${total}` });
-    // Camada por cima da página: cada bloco traduzido cobre o texto original, no mesmo lugar e com a mesma cor de fundo.
-    const sobre = h('div', { class: 'doc-sobre' });
-    const folha = h('div', { class: 'doc-folha' }, canvas, sobre);
-    const avisoPagina = h('div', { class: 'aviso info', hidden: true },
-      'Esta página não tem texto (pode ter sido escaneada como imagem), por isso não dá para traduzir.');
-    caixaCanvas = h('div', { class: 'doc-pagina-caixa' }, folha);
-    visual.replaceChildren(avisoPagina, caixaCanvas);
+    const folhas = h('div', { class: 'lt-folhas' });
+    palco.replaceChildren(folhas);
+    const paginas = new Map(); // número -> { el, canvas, camadaTexto, marcas, pinos, sobre, desenho, camada, pronta }
+    const textos = new Map(); // número -> texto corrido (busca)
+    let geracao = 0;
 
-    let renderAtual = null;
-    let zoom = 1;
+    const duas = () => prefs.modo === 'duas' && total > 1;
+    const visiveis = (n = indice) => (duas() && n + 1 <= total ? [n, n + 1] : [n]);
+    const normalizar = (n) => (duas() ? n - ((n - 1) % 2) : n);
 
-    blocosDaPagina = async (n) => {
-      const pagina = await doc.getPage(n);
-      return blocosDaPaginaPdf(await pagina.getTextContent(), pagina.getViewport({ scale: 1 }), pdfjs.Util);
-    };
+    async function escalaPara(nums) {
+      const vps = await Promise.all(nums.map(async (n) => (await doc.getPage(n)).getViewport({ scale: 1 })));
+      const gap = 18;
+      const largura = Math.max(200, palco.clientWidth - 40);
+      const altura = Math.max(200, palco.clientHeight - 32);
+      let s = (largura - gap * (nums.length - 1)) / vps.reduce((a, v) => a + v.width, 0);
+      if (prefs.ajuste === 'pagina') s = Math.min(s, altura / Math.max(...vps.map((v) => v.height)));
+      return Math.max(0.1, s * prefs.fator);
+    }
 
-    // Diminui a letra até a tradução caber no espaço do texto original.
-    ajustarBloco = (el) => {
+    function criarFolha(num) {
+      const canvas = h('canvas', { class: 'lt-canvas' });
+      const camadaTexto = h('div', { class: 'textLayer' });
+      const marcas = h('div', { class: 'lt-marcas' });
+      const sobre = h('div', { class: 'lt-sobre' });
+      const pinos = h('div', { class: 'lt-pinos' });
+      const el = h('div', { class: 'lt-pagina', 'data-pagina': String(num), 'aria-label': `Página ${num} de ${total}` }, canvas, marcas, camadaTexto, sobre, pinos);
+      paginas.set(num, { el, canvas, camadaTexto, marcas, sobre, pinos, pronta: false });
+      return el;
+    }
+
+    async function desenharFolha(num, s, g) {
+      const p = paginas.get(num);
+      const pagina = await doc.getPage(num);
+      if (g !== geracao) return;
+      const vp = pagina.getViewport({ scale: s });
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const px = Math.min(dpr, Math.sqrt(16e6 / Math.max(1, vp.width * vp.height))); // limita a memória do desenho
+      p.el.style.width = `${Math.floor(vp.width)}px`;
+      p.el.style.height = `${Math.floor(vp.height)}px`;
+      p.el.style.setProperty('--scale-factor', String(s));
+      p.canvas.width = Math.max(1, Math.floor(vp.width * px));
+      p.canvas.height = Math.max(1, Math.floor(vp.height * px));
+      p.desenho = pagina.render({ canvasContext: p.canvas.getContext('2d'), viewport: vp, transform: px !== 1 ? [px, 0, 0, px, 0, 0] : undefined });
+
+      // Texto selecionável (para realçar, anotar, copiar e traduzir um trecho).
+      const conteudoTexto = await pagina.getTextContent();
+      if (g !== geracao) return;
+      if (!textos.has(num)) textos.set(num, textoCorrido(conteudoTexto));
+      p.camada = new pdfjs.TextLayer({ textContentSource: conteudoTexto, container: p.camadaTexto, viewport: vp });
+      p.camada.render().then(() => marcarAchadosEm(p)).catch(() => {});
+      desenharNotasEm(num);
+      await desenharTraducao(num);
+      try {
+        await p.desenho.promise;
+      } catch (e) {
+        if (e?.name !== 'RenderingCancelledException') throw e;
+        return;
+      }
+      if (g !== geracao) return;
+      p.pronta = true;
+      pintarCores(num);
+    }
+
+    async function mostrar(n) {
+      const g = ++geracao;
+      const nums = visiveis(n);
+      const s = await escalaPara(nums);
+      if (g !== geracao) return;
+      nivelZoom.textContent = `${Math.round(s * 100)}%`;
+      for (const p of paginas.values()) {
+        try {
+          p.desenho?.cancel();
+        } catch {}
+        try {
+          p.camada?.cancel();
+        } catch {}
+      }
+      paginas.clear();
+      elementos.clear();
+      folhas.replaceChildren(...nums.map(criarFolha));
+      folhas.classList.toggle('duas', nums.length > 1);
+      await Promise.all(nums.map((num) => desenharFolha(num, s, g)));
+      if (g !== geracao) return;
+      const semTexto = (await Promise.all(nums.map(obterBlocos))).every((b) => !b.length);
+      avisoPagina.hidden = !(semTexto && (modoTraduzido || termoDestaque));
+    }
+
+    // ----- tradução por cima da página -----
+    function ajustarBloco(el) {
       if (!el.classList.contains('doc-sobre-bloco')) return;
       if (!el.textContent) {
         el.style.fontSize = '';
         return;
       }
-      let tam = Math.max(7, (Number(el.dataset.fonte) || 0.015) * canvas.clientHeight);
+      const alturaPagina = el.closest('.lt-pagina')?.clientHeight || 800;
+      let tam = Math.max(7, (Number(el.dataset.fonte) || 0.015) * alturaPagina);
       el.style.fontSize = `${tam}px`;
       for (let i = 0; i < 40 && el.scrollHeight > el.clientHeight + 1 && tam > 5; i++) {
         tam *= 0.92;
         el.style.fontSize = `${tam}px`;
       }
-    };
+    }
 
-    desenharTraducaoPdf = async (n) => {
-      const blocos = await obterBlocos(n);
-      if (n !== indice) return;
-      elementos.clear();
-      sobre.replaceChildren();
-      avisoPagina.hidden = !(modoTraduzido && !blocos.length);
+    async function desenharTraducao(num) {
+      const p = paginas.get(num);
+      if (!p) return;
+      const blocos = await obterBlocos(num);
+      if (paginas.get(num) !== p) return;
+      p.sobre.replaceChildren();
+      for (const k of [...elementos.keys()]) if (k.startsWith(`${num}:`)) elementos.delete(k);
       blocos.forEach((dados, bloco) => {
         const c = dados.caixa;
         const el = h('div', {
@@ -594,150 +1065,323 @@ export async function render(raiz, { args = [] } = {}) {
           'data-fonte': String(dados.fonte),
           style: { left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%` },
         });
-        el.addEventListener('click', () => alternarBloco(n, bloco, dados, el));
-        elementos.set(`${n}:${bloco}`, { el, dados });
-        sobre.append(el);
-        atualizarBlocoEl(n, bloco, dados, el);
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          alternarBloco(num, bloco, dados, el);
+        });
+        elementos.set(`${num}:${bloco}`, { el, dados });
+        p.sobre.append(el);
+        atualizarBlocoEl(num, bloco, dados, el);
       });
-      if (paginaPronta === n) pintarCores(n);
-    };
+      if (p.pronta) pintarCores(num);
+    }
 
     // As cores vêm da página desenhada: só dá para ler depois que o desenho termina.
-    let paginaPronta = 0;
-    function pintarCores(n) {
-      const ctx = canvas.getContext('2d');
+    function pintarCores(num) {
+      const p = paginas.get(num);
+      if (!p?.pronta) return;
+      const ctx = p.canvas.getContext('2d', { willReadFrequently: true });
       for (const [chave, { el, dados }] of elementos) {
-        if (!chave.startsWith(`${n}:`)) continue;
-        dados.cor ||= coresDoBloco(ctx, canvas.width, canvas.height, dados.caixa);
-        el.style.setProperty('--fundo', dados.cor.fundo);
-        el.style.setProperty('--letra', dados.cor.letra);
+        if (!chave.startsWith(`${num}:`)) continue;
+        dados.cor ||= coresDoBloco(ctx, p.canvas.width, p.canvas.height, dados.caixa);
+        el.style.setProperty('--bloco-fundo', dados.cor.fundo);
+        el.style.setProperty('--bloco-letra', dados.cor.letra);
       }
     }
 
-    async function renderizarCanvasLocal(n) {
-      const pagina = await doc.getPage(n);
-      const base = pagina.getViewport({ scale: 1 });
-      const largura = Math.max(260, (visual.clientWidth || 700) - 8);
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const vp = pagina.getViewport({ scale: (largura / base.width) * dpr * zoom });
-      canvas.width = Math.max(1, Math.round(vp.width));
-      canvas.height = Math.max(1, Math.round(vp.height));
-      canvas.style.width = `${Math.round(vp.width / dpr)}px`;
-      canvas.style.height = `${Math.round(vp.height / dpr)}px`;
-      canvas.setAttribute('aria-label', `Página ${n} de ${total}`);
-      try {
-        renderAtual?.cancel();
-      } catch {}
-      paginaPronta = 0;
-      const desenho = pagina.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
-      renderAtual = desenho;
-      try {
-        await desenho.promise;
-      } catch (e) {
-        if (e?.name !== 'RenderingCancelledException') throw e;
-        return;
+    // ----- realces e notas -----
+    function desenharNotasEm(num) {
+      const p = paginas.get(num);
+      if (!p) return;
+      const daPagina = notas.filter((n) => n.pagina === num && n.retangulos?.length);
+      p.marcas.replaceChildren(...daPagina.flatMap((n) => n.retangulos.map((r) => h('div', {
+        class: `lt-marca cor-${n.cor}`, 'data-nota': n.id,
+        style: { left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` },
+      }))));
+      p.pinos.replaceChildren(...daPagina.filter((n) => n.nota).map((n) => {
+        const r = n.retangulos[n.retangulos.length - 1];
+        return h('button', {
+          class: `lt-pino cor-${n.cor}`, title: n.nota.slice(0, 200), 'aria-label': 'Ver nota',
+          style: { left: `${Math.min(97, (r.x + r.w) * 100)}%`, top: `${r.y * 100}%` },
+          onclick: (e) => {
+            e.stopPropagation();
+            editarNota(n);
+          },
+        }, icone('nota', 12));
+      }));
+    }
+
+    function notaNoClique(e) {
+      const pag = e.target.closest?.('.lt-pagina');
+      if (!pag || e.target.closest('.doc-sobre-bloco.tem-traducao, .lt-pino')) return null;
+      const num = Number(pag.dataset.pagina);
+      const c = pag.getBoundingClientRect();
+      const fx = (e.clientX - c.left) / c.width;
+      const fy = (e.clientY - c.top) / c.height;
+      return notas.find((n) => n.pagina === num && n.retangulos?.some((r) => fx >= r.x && fx <= r.x + r.w && fy >= r.y && fy <= r.y + r.h)) || null;
+    }
+
+    function piscarNota(idNota) {
+      for (const el of folhas.querySelectorAll(`.lt-marca[data-nota="${CSS.escape(idNota)}"]`)) {
+        el.classList.remove('piscar');
+        void el.offsetWidth;
+        el.classList.add('piscar');
       }
-      if (renderAtual !== desenho || n !== indice) return;
-      paginaPronta = n;
-      pintarCores(n);
-    }
-    renderizarCanvas = renderizarCanvasLocal;
-
-    const seletor = h('select', { class: 'doc-seletor', 'aria-label': 'Página', onchange: (e) => ir(Number(e.target.value)) },
-      Array.from({ length: total }, (_, k) => h('option', { value: k + 1 }, `Página ${k + 1}`)));
-    const anterior = h('button', { class: 'botao pequeno', onclick: () => ir(indice - 1) }, 'Anterior');
-    const proxima = h('button', { class: 'botao pequeno', onclick: () => ir(indice + 1) }, 'Próxima');
-    const menos = h('button', { class: 'botao pequeno', title: 'Diminuir página', onclick: () => mudarZoom(-0.15) }, '−');
-    const mais = h('button', { class: 'botao pequeno', title: 'Aumentar página', onclick: () => mudarZoom(0.15) }, '+');
-    const nivelZoom = h('span', { class: 'suave', style: { minWidth: '42px', textAlign: 'center' } }, '100%');
-
-    async function mudarZoom(d) {
-      zoom = Math.min(3, Math.max(0.5, Number((zoom + d).toFixed(2))));
-      nivelZoom.textContent = `${Math.round(zoom * 100)}%`;
-      await mostrarParte();
+      folhas.querySelector(`.lt-marca[data-nota="${CSS.escape(idNota)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
-    ferramentas.replaceChildren(
-      h('div', { class: 'doc-linha-ferramentas' },
-        anterior, seletor, proxima,
-        h('span', { style: { flex: 1 } }),
-        h('span', { class: 'doc-zoom' }, menos, nivelZoom, mais)),
-      h('div', { class: 'doc-linha-ferramentas' },
-        seletorModo, btnTraduzir, btnTraduzirTudo, btnParar, estadoTrad));
-    btnTraduzir.replaceChildren(icone('texto', 14), 'Traduzir esta página');
+    function infoSelecao(range) {
+      const no = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+      const pag = no?.closest?.('.lt-pagina');
+      if (!pag || !folhas.contains(pag)) return null;
+      const num = Number(pag.dataset.pagina);
+      const c = pag.getBoundingClientRect();
+      const rects = [...range.getClientRects()].filter((r) => r.width > 1 && r.height > 1 && r.height < c.height * 0.15
+        && r.left < c.right && r.right > c.left && r.top < c.bottom && r.bottom > c.top);
+      if (!rects.length) return null;
+      // Junta os pedaços da mesma linha num retângulo só.
+      const linhas = [];
+      for (const r of rects.sort((a, b) => a.top - b.top || a.left - b.left)) {
+        const l = linhas.find((x) => Math.abs(x.top - r.top) < r.height * 0.5 && r.left <= x.right + r.height);
+        if (l) {
+          l.left = Math.min(l.left, r.left);
+          l.right = Math.max(l.right, r.right);
+          l.top = Math.min(l.top, r.top);
+          l.bottom = Math.max(l.bottom, r.bottom);
+        } else linhas.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+      }
+      const retangulos = linhas.map((l) => {
+        const x0 = Math.max(l.left, c.left);
+        const y0 = Math.max(l.top, c.top);
+        return { x: (x0 - c.left) / c.width, y: (y0 - c.top) / c.height, w: (Math.min(l.right, c.right) - x0) / c.width, h: (Math.min(l.bottom, c.bottom) - y0) / c.height };
+      }).filter((r) => r.w > 0 && r.h > 0).slice(0, 300);
+      const trecho = range.toString().replace(/\s+/g, ' ').trim().slice(0, 4000);
+      return trecho && retangulos.length ? { pagina: num, trecho, retangulos } : null;
+    }
 
-    atualizarFerramentas = () => {
-      anterior.disabled = indice <= 1;
-      proxima.disabled = indice >= total;
-      seletor.value = String(indice);
-    };
-    indice = Math.min(paginaInicial, total);
-    atualizarFerramentas();
+    // ----- busca -----
+    function textoCorrido(c) {
+      return c.items.map((i) => (i.str || '') + (i.hasEOL ? ' ' : '')).join('').replace(/\s+/g, ' ').trim();
+    }
+    async function textoDe(num) {
+      if (!textos.has(num)) textos.set(num, textoCorrido(await (await doc.getPage(num)).getTextContent()));
+      return textos.get(num);
+    }
+    async function buscar(termo, aoAchar, sinal, aoProgresso) {
+      let n = 0;
+      for (let num = 1; num <= total; num++) {
+        if (sinal.aborted) return;
+        for (const r of trechosAchados(await textoDe(num), termo, MAX_RESULTADOS - n)) {
+          aoAchar({ pagina: num, ...r });
+          n++;
+        }
+        if (n >= MAX_RESULTADOS) return;
+        if (num % 8 === 0) {
+          aoProgresso?.(num, total);
+          await esperar();
+        }
+      }
+    }
+    function marcarAchadosEm(p) {
+      const q = semAcento(termoDestaque);
+      for (const span of p.camadaTexto.querySelectorAll('span')) {
+        span.classList.toggle('lt-achado', !!q && semAcento(span.textContent).includes(q));
+      }
+    }
 
-    let esperaResize;
-    reajustarVisual = () => {
-      clearTimeout(esperaResize);
-      esperaResize = setTimeout(() => {
-        mostrarParte().catch(() => {});
-      }, 250);
-    };
-    window.addEventListener('resize', reajustarVisual);
-    destruirDoc = () => {
-      window.removeEventListener('resize', reajustarVisual);
-      clearTimeout(esperaResize);
-      Promise.resolve(doc.destroy?.()).catch(() => {});
+    // ----- sumário -----
+    async function sumarioPdf() {
+      const outline = await doc.getOutline();
+      if (!outline?.length) return [];
+      const paginaDoDestino = async (dest) => {
+        try {
+          const d = typeof dest === 'string' ? await doc.getDestination(dest) : dest;
+          if (!Array.isArray(d)) return null;
+          return typeof d[0] === 'number' ? d[0] + 1 : (await doc.getPageIndex(d[0])) + 1;
+        } catch {
+          return null;
+        }
+      };
+      const converter = (itens) => Promise.all(itens.map(async (i) => ({
+        titulo: i.title, pagina: await paginaDoDestino(i.dest), filhos: i.items?.length ? await converter(i.items) : [],
+      })));
+      return converter(outline);
+    }
+
+    return {
+      visiveis,
+      normalizar,
+      passo: () => (duas() ? 2 : 1),
+      paginaDe: (n) => n,
+      mostrar,
+      reajustar: () => mostrar(indice),
+      zoom: () => mostrar(indice),
+      blocos: async (n) => {
+        const pagina = await doc.getPage(n);
+        return blocosDaPaginaPdf(await pagina.getTextContent(), pagina.getViewport({ scale: 1 }), pdfjs.Util);
+      },
+      ajustarBloco,
+      aposBloco: (parte, bloco, el) => ajustarBloco(el),
+      desenharNotas: () => visiveis().forEach(desenharNotasEm),
+      notaNoClique,
+      piscarNota,
+      infoSelecao,
+      buscar,
+      marcarAchados: () => {
+        for (const p of paginas.values()) marcarAchadosEm(p);
+      },
+      sumario: sumarioPdf,
+      destruir: () => {
+        geracao++;
+        Promise.resolve(doc.destroy?.()).catch(() => {});
+      },
     };
   }
 
-  // ----- EPUB e texto -----
-  async function montarTexto() {
+  // =====================================================================
+  // EPUB e texto: capítulos em texto corrido, com realces no próprio parágrafo.
+  // =====================================================================
+  async function criarLeitorTexto() {
     const dados = await api.get(`/api/biblioteca/${encodeURIComponent(id)}/leitura`);
     partes.push(...(dados.partes || []));
     if (!partes.length) throw new Error('Não há texto para mostrar neste arquivo.');
     total = partes.length;
 
-    // Número da página vindo da busca = capítulo do EPUB; caps divididos mantêm o número original.
-    const achado = paginaInicial > 1 ? partes.findIndex((p) => p.capitulo === paginaInicial) : -1;
-    indice = achado >= 0 ? achado + 1 : 1;
-    visual.replaceChildren(caixaTexto);
-
-    let tamanhoFonte = 18;
-    try {
-      tamanhoFonte = Number(localStorage.getItem('pz-leitor-fonte')) || 18;
-    } catch {}
+    const conteudo = h('article', { class: 'doc-texto lt-texto' });
+    const caixa = h('div', { class: 'lt-texto-caixa' }, conteudo);
+    palco.replaceChildren(caixa);
     const aplicarFonte = () => {
-      conteudo.style.fontSize = `${tamanhoFonte}px`;
-      try {
-        localStorage.setItem('pz-leitor-fonte', String(tamanhoFonte));
-      } catch {}
+      conteudo.style.fontSize = `${prefs.fonte}px`;
+      nivelZoom.textContent = `${Math.round((prefs.fonte / 18) * 100)}%`;
     };
     aplicarFonte();
 
-    const seletor = h('select', { class: 'doc-seletor', 'aria-label': 'Capítulo', onchange: (e) => ir(Number(e.target.value)) },
-      partes.map((p, k) => h('option', { value: k + 1 }, p.titulo || `Parte ${k + 1}`)));
-    const anterior = h('button', { class: 'botao pequeno', onclick: () => ir(indice - 1) }, 'Anterior');
-    const proxima = h('button', { class: 'botao pequeno', onclick: () => ir(indice + 1) }, 'Próxima');
-    const menor = h('button', { class: 'botao pequeno', title: 'Diminuir letra', onclick: () => mudarFonte(-1) }, 'A−');
-    const maior = h('button', { class: 'botao pequeno', title: 'Aumentar letra', onclick: () => mudarFonte(1) }, 'A+');
-
-    function mudarFonte(d) {
-      tamanhoFonte = Math.min(30, Math.max(13, tamanhoFonte + d));
-      aplicarFonte();
+    // Realces das notas e da busca no parágrafo (só quando ele mostra o texto original).
+    function realcesDoBloco(parte, bloco, el, mostrandoTraducao) {
+      if (mostrandoTraducao) return;
+      for (const n of notas) {
+        if (n.pagina !== parte || n.bloco !== bloco) continue;
+        realcar(el, n.inicio, n.fim, { class: `lt-realce cor-${n.cor}${n.nota ? ' com-nota' : ''}`, 'data-nota': n.id, title: n.nota ? n.nota.slice(0, 200) : 'Clique para escrever uma nota' });
+      }
+      if (termoDestaque.length >= 2) {
+        const texto = el.textContent;
+        const q = semAcento(termoDestaque);
+        const n = semAcento(texto);
+        if (n.length === texto.length) {
+          const achados = [];
+          for (let i = n.indexOf(q); i >= 0; i = n.indexOf(q, i + q.length)) achados.push(i);
+          for (const i of achados.reverse()) realcar(el, i, i + q.length, { class: 'lt-achado' });
+        }
+      }
     }
 
-    ferramentas.replaceChildren(
-      h('div', { class: 'doc-linha-ferramentas' },
-        anterior, seletor, proxima,
-        h('span', { style: { flex: 1 } }), menor, maior),
-      h('div', { class: 'doc-linha-ferramentas' },
-        seletorModo, btnTraduzir, btnTraduzirTudo, btnParar, estadoTrad));
-    btnTraduzir.replaceChildren(icone('texto', 14), it.tipo === 'epub' ? 'Traduzir este capítulo' : 'Traduzir esta parte');
+    function redesenharBlocos() {
+      for (const [chave, { el, dados: d }] of elementos) {
+        const [parte, bloco] = chave.split(':').map(Number);
+        atualizarBlocoEl(parte, bloco, d, el);
+      }
+    }
 
-    atualizarFerramentas = () => {
-      anterior.disabled = indice <= 1;
-      proxima.disabled = indice >= total;
-      seletor.value = String(indice);
+    async function mostrar(parte) {
+      const blocos = await obterBlocos(parte);
+      if (parte !== indice) return;
+      elementos.clear();
+      conteudo.replaceChildren();
+      avisoPagina.hidden = true;
+      if (!blocos.length) {
+        conteudo.append(aviso('info', 'Este trecho não tem texto para mostrar.'));
+        return;
+      }
+      blocos.forEach((d, bloco) => {
+        if (d.tipo === 'imagem') {
+          conteudo.append(h('img', { class: 'doc-imagem', src: d.src, alt: 'Ilustração do livro', loading: 'lazy' }));
+          return;
+        }
+        const tag = d.tipo === 'titulo' ? (d.nivel && d.nivel <= 2 ? 'h2' : 'h3') : 'p';
+        const el = h(tag, { class: 'doc-bloco', 'data-bloco': String(bloco) });
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('mark.lt-realce')) return;
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed) return;
+          alternarBloco(parte, bloco, d, el);
+        });
+        elementos.set(`${parte}:${bloco}`, { el, dados: d });
+        conteudo.append(el);
+        atualizarBlocoEl(parte, bloco, d, el);
+      });
+      caixa.scrollTop = 0;
+    }
+
+    function infoSelecao(range) {
+      const no = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+      const blocoEl = no?.closest?.('.doc-bloco');
+      const trecho = range.toString().replace(/\s+/g, ' ').trim().slice(0, 4000);
+      if (!trecho) return null;
+      // Trecho dentro de um parágrafo com o texto original: guarda a posição para mostrar o realce.
+      if (!blocoEl || !conteudo.contains(blocoEl) || blocoEl.classList.contains('traduzido')) return { pagina: indice, trecho };
+      const r = document.createRange();
+      r.setStart(blocoEl, 0);
+      r.setEnd(range.startContainer, range.startOffset);
+      const inicio = r.toString().length;
+      let fim = blocoEl.textContent.length;
+      if (blocoEl.contains(range.endContainer)) {
+        r.setEnd(range.endContainer, range.endOffset);
+        fim = r.toString().length;
+      }
+      return { pagina: indice, bloco: Number(blocoEl.dataset.bloco), inicio, fim, trecho };
+    }
+
+    async function buscar(termo, aoAchar, sinal) {
+      let n = 0;
+      for (let parte = 1; parte <= total; parte++) {
+        if (sinal.aborted) return;
+        const texto = (await obterBlocos(parte)).filter((b) => b.texto).map((b) => b.texto).join(' ');
+        for (const r of trechosAchados(texto, termo, MAX_RESULTADOS - n)) {
+          aoAchar({ pagina: parte, ...r });
+          n++;
+        }
+        if (n >= MAX_RESULTADOS) return;
+        if (parte % 10 === 0) await esperar();
+      }
+    }
+
+    // Número de página vindo da busca da Biblioteca = capítulo do EPUB (capítulos divididos mantêm o número).
+    const paginaDe = (n) => {
+      const achado = partes.findIndex((p) => p.capitulo === n);
+      return achado >= 0 ? achado + 1 : Math.min(total, n);
     };
-    atualizarFerramentas();
+
+    return {
+      visiveis: () => [indice],
+      normalizar: (n) => n,
+      passo: () => 1,
+      paginaDe,
+      mostrar,
+      reajustar: () => {},
+      zoom: () => {
+        aplicarFonte();
+        gravarPrefs(prefs);
+      },
+      blocos: async (parte) => partes[parte - 1]?.blocos || [],
+      aposBloco: realcesDoBloco,
+      desenharNotas: redesenharBlocos,
+      notaNoClique: (e) => {
+        const m = e.target.closest?.('mark.lt-realce');
+        return m ? notas.find((n) => n.id === m.dataset.nota) || null : null;
+      },
+      piscarNota: (idNota) => {
+        const m = conteudo.querySelector(`mark.lt-realce[data-nota="${CSS.escape(idNota)}"]`);
+        if (!m) return;
+        m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        m.classList.remove('piscar');
+        void m.offsetWidth;
+        m.classList.add('piscar');
+      },
+      infoSelecao,
+      buscar,
+      marcarAchados: redesenharBlocos,
+      sumario: async () => partes.map((p, k) => ({ titulo: p.titulo || `Parte ${k + 1}`, pagina: k + 1, filhos: [] })),
+      destruir: () => {},
+    };
   }
 }

@@ -8,6 +8,7 @@ import { DADOS, PASTAS, lerJSON, gravarJSON, nomeSeguro, arquivoLivre, dentroDe 
 import { lerZip } from './zip.js';
 import { removerDocumento } from './indice.js';
 import { remover as removerTraducao } from './traducao.js';
+import { remover as removerLeitura } from './leitura.js';
 
 const ARQ = path.join(DADOS, 'biblioteca.json');
 let reg = null;
@@ -66,6 +67,7 @@ export async function remover(id) {
   }
   await removerDocumento(id);
   await removerTraducao(id);
+  await removerLeitura(id);
   delete reg.itens[id];
   await salvar();
   return it;
@@ -110,12 +112,7 @@ const textoDeHtml = (html) =>
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<\/(p|div|h\d|li|br|tr)>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&[#a-z0-9]+;/gi, (m) => decodificarHtml(m))
     .replace(/[ \t]+/g, ' ');
 
 /** Extrai texto no servidor (TXT, MD, HTML, EPUB). PDFs são extraídos no navegador com pdf.js. */
@@ -143,11 +140,26 @@ const ENTIDADES = {
   ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', deg: '°', middot: '·', bull: '•',
 };
 
+// Letras acentuadas (&aacute; &Ccedil; &otilde;…) e símbolos comuns, muito usados em EPUBs antigos.
+const ACENTOS = { acute: '\u0301', grave: '\u0300', circ: '\u0302', tilde: '\u0303', uml: '\u0308', cedil: '\u0327', ring: '\u030A' };
+for (const letra of 'aeiouycnAEIOUYCN') {
+  for (const [nome, marca] of Object.entries(ACENTOS)) {
+    const c = (letra + marca).normalize('NFC');
+    if (c.length === 1) ENTIDADES[letra + nome] = c;
+  }
+}
+Object.assign(ENTIDADES, {
+  szlig: 'ß', aelig: 'æ', AElig: 'Æ', oslash: 'ø', Oslash: 'Ø', copy: '©', reg: '®', trade: '™', euro: '€', pound: '£', cent: '¢',
+  ordm: 'º', ordf: 'ª', sup1: '¹', sup2: '²', sup3: '³', frac12: '½', frac14: '¼', frac34: '¾', times: '×', divide: '÷',
+  plusmn: '±', micro: 'µ', para: '¶', sect: '§', iexcl: '¡', iquest: '¿', shy: '', zwnj: '', zwj: '', thinsp: ' ', ensp: ' ', emsp: ' ',
+  sbquo: '‚', bdquo: '„', dagger: '†', Dagger: '‡', permil: '‰', prime: '′', Prime: '″', larr: '←', rarr: '→', uarr: '↑', darr: '↓',
+});
+
 function decodificarHtml(s) {
   return String(s)
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16) || 32))
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n) || 32))
-    .replace(/&([a-z]+);/gi, (m, n) => ENTIDADES[n.toLowerCase()] ?? m);
+    .replace(/&([a-z][a-z0-9]*);/gi, (m, n) => ENTIDADES[n] ?? ENTIDADES[n.toLowerCase()] ?? m);
 }
 
 const textoSimples = (html) =>
