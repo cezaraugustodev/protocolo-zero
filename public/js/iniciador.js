@@ -298,7 +298,8 @@ export function painelAtualizar({ aoTerminar } = {}) {
         const caixa = (marcado, aoMudar, rotulo) => h('input', { type: 'checkbox', checked: marcado, 'aria-label': rotulo, onchange: (e) => aoMudar(e.target.checked) });
         // O programa vem primeiro; e aparece mesmo quando está em dia.
         const itens = [...(info.itens || [])].sort((a, b) => (b.tipo === 'programa') - (a.tipo === 'programa'));
-        const dataProg = info.programa?.data ? new Date(info.programa.data).toLocaleDateString('pt-BR') : '';
+        const dProg = info.programa?.data ? new Date(info.programa.data) : null;
+        const dataProg = dProg ? `${dProg.toLocaleDateString('pt-BR')} às ${dProg.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : '';
         const linhaPrograma = itens.some((i) => i.tipo === 'programa')
           ? null
           : h('li', { class: 'lista-atualizacoes-em-dia' },

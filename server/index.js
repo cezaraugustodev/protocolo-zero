@@ -786,7 +786,10 @@ rota('PUT', /^\/api\/auto$/, async (req, res) => {
     if (abrirAoLigar !== undefined) await auto.registrar(!!abrirAoLigar, 'abrir');
   } catch (e) {
     registrarErro('auto/registrar', e);
-    if (PLATAFORMA === 'win32') return erro(res, 500, `Não foi possível criar o atalho que abre o Protocolo Zero ao ligar o computador. ${AVISO_ANTIVIRUS_INICIALIZACAO}`);
+    // Só fala em antivírus quando o erro é de permissão/bloqueio; nos outros casos mostra o motivo.
+    const bloqueio = ['EPERM', 'EACCES', 'EBUSY'].includes(e.code) || /negad|denied|bloque|blocked|unauthorized|vírus|virus/i.test(e.message);
+    if (PLATAFORMA === 'win32' && bloqueio) return erro(res, 500, `Não foi possível criar o atalho que abre o Protocolo Zero ao ligar o computador. ${AVISO_ANTIVIRUS_INICIALIZACAO}`);
+    if (PLATAFORMA === 'win32') return erro(res, 500, `Não foi possível criar o atalho que abre o Protocolo Zero ao ligar o computador. Detalhe técnico: ${e.message}`);
     return erro(res, 500, `Não foi possível mudar o que acontece ao ligar o computador: ${e.message}`);
   }
   // O atalho foi criado, mas sumiu logo em seguida: o antivírus apagou.

@@ -143,6 +143,15 @@ async function pendenciasRemotas() {
   return itens;
 }
 
+/** Data da versão do programa instalada neste computador (git: último commit; ZIP: dados/programa.json). */
+async function dataProgramaLocal() {
+  if (await existe(path.join(RAIZ, '.git'))) {
+    const d = await executarCmd('git', ['log', '-1', '--format=%cI'], { cwd: RAIZ, timeout: 15000 }).catch(() => '');
+    return String(d).trim() || null;
+  }
+  return (await lerJSON(path.join(DADOS, 'programa.json'), null))?.data || null;
+}
+
 /** Estado do repositório git (o programa é instalado com `git clone`). */
 async function estadoGit({ buscar = true } = {}) {
   if (!(await existe(path.join(RAIZ, '.git')))) return null;
@@ -184,7 +193,9 @@ export async function verificarAtualizacoes(config, { forcar = false, semRede = 
     return !(instalados.get(r.id)?.versao >= r.versao);
   });
   const itens = [...locais, ...remotas];
-  ultima = { ...ultima, itens, total: somar(itens), quando: Date.now() };
+  // A data mostrada é sempre a da versão instalada agora (a consulta à internet pode ser de horas atrás).
+  const programaAtual = ultima?.programa ? { ...ultima.programa, data: (await dataProgramaLocal()) || ultima.programa.data } : null;
+  ultima = { ...ultima, itens, programa: programaAtual, total: somar(itens), quando: Date.now() };
   await gravarJSON(ARQ_VERIFICACAO, ultima).catch(() => {});
   return ultima;
 }

@@ -272,6 +272,13 @@ export async function obterTexto(url, opcoes = {}) {
 
 /** Executa um comando e devolve stdout (rejeita se o código de saída != 0). */
 export function executar(cmd, args = [], { timeout = 60000, cwd } = {}) {
+  // PowerShell: saída em UTF-8. Sem isso, nomes com acento (ex.: a pasta do usuário "Cézar")
+  // chegam trocados ("C�zar") e os caminhos ficam errados.
+  const iCmd = /^powershell(\.exe)?$/i.test(path.basename(cmd)) ? args.indexOf('-Command') : -1;
+  if (iCmd >= 0 && typeof args[iCmd + 1] === 'string') {
+    args = [...args];
+    args[iCmd + 1] = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${args[iCmd + 1]}`;
+  }
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { cwd, windowsHide: true });
     let out = '';
