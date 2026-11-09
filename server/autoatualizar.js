@@ -20,7 +20,7 @@ import { RAIZ, DADOS, PLATAFORMA, executar, existe, lerJSON, gravarJSON } from '
 
 // Duas entradas independentes ao ligar o computador:
 //   atualizar — abre escondido, procura fontes novas e fecha sozinho (--atualizar-sozinho);
-//   abrir     — abre o Protocolo Zero normalmente (com a janela e o navegador).
+//   abrir     — abre o Protocolo Zero normalmente (sem janela; abre o navegador).
 const TIPOS = {
   atualizar: {
     win: 'Protocolo Zero - atualizar.lnk', plist: 'br.protocolozero.atualizar', desktop: 'protocolo-zero-atualizar.desktop',
@@ -28,7 +28,7 @@ const TIPOS = {
   },
   abrir: {
     win: 'Protocolo Zero.lnk', plist: 'br.protocolozero.abrir', desktop: 'protocolo-zero-abrir.desktop',
-    nome: 'Protocolo Zero', descricao: 'Abrir o Protocolo Zero ao ligar o computador', args: [], escondido: false,
+    nome: 'Protocolo Zero', descricao: 'Abrir o Protocolo Zero ao ligar o computador', args: [], escondido: true, icone: 13,
   },
 };
 export const TIPOS_INICIO = Object.keys(TIPOS);
@@ -67,7 +67,7 @@ export async function registrado(tipo = 'atualizar') {
 
 /**
  * Script PowerShell que cria o atalho do Windows. O atalho abre um PowerShell escondido que abre o Node
- * (escondido para "atualizar"; minimizado para "abrir", que mostra a janela do servidor na barra de tarefas).
+ * escondido. Para fechar, o usuário usa o botão "Fechar o Protocolo Zero" do próprio programa.
  * Atalhos não têm modo "oculto"; WindowStyle 7 = minimizado, para não piscar.
  */
 export function scriptAtalhoWindows({ arq, node, script, dados, raiz = RAIZ, tipo = 'atualizar' }) {
@@ -80,7 +80,7 @@ export function scriptAtalhoWindows({ arq, node, script, dados, raiz = RAIZ, tip
     + "$s.TargetPath=(Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'); "
     + `$s.Arguments='-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command "${esc(comando).replace(/"/g, '\\"')}"'; `
     + `$s.WorkingDirectory='${esc(raiz)}'; $s.WindowStyle=7; $s.Description='${esc(t.descricao)}'; `
-    + `$s.IconLocation=(Join-Path $env:SystemRoot 'System32\\shell32.dll') + ',${t.escondido ? 238 : 13}'; $s.Save()`;
+    + `$s.IconLocation=(Join-Path $env:SystemRoot 'System32\\shell32.dll') + ',${t.icone ?? 238}'; $s.Save()`;
 }
 
 /** Liga ou desliga uma das entradas de "ao ligar o computador" (tipo: atualizar | abrir). */

@@ -53,7 +53,7 @@ Dentro da pasta, dê **dois cliques** no arquivo do seu sistema:
 | **macOS** | `Iniciar Protocolo Zero.command` (na primeira vez: botão direito → **Abrir**) |
 | **Linux** | `iniciar-protocolo-zero.sh` (ou, no terminal: `./iniciar-protocolo-zero.sh`) |
 
-Pronto. Deixe a janela preta aberta enquanto usa: fechar ela fecha o Protocolo Zero.
+Pronto. No Windows, o Protocolo Zero abre direto no navegador, sem janela preta: o andamento e os avisos aparecem no próprio programa. Para fechar, use **Fechar o Protocolo Zero**, no fim do menu lateral.
 
 ---
 
@@ -96,7 +96,7 @@ Os downloads continuam enquanto você usa o Protocolo Zero e aparecem em **Trans
 
 ## Atualizações
 
-Em **Ajustes → Atualizações e inicialização** você pode marcar:
+Em **Ajustes → Atualizações** você vê o que há de novo, clica em **Atualizar agora** e pode marcar:
 
 - **Procurar fontes novas sozinho** — uma vez por dia, ao ligar o computador, baixa os livros e manuais novos do seu pacote. Não precisa abrir o programa.
 - **Trocar para um modelo de IA melhor quando houver.**

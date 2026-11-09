@@ -1,24 +1,35 @@
 @echo off
+rem Protocolo Zero: abre com dois cliques (Windows), sem janela preta.
+rem Este arquivo se abre de novo escondido; o andamento e os avisos aparecem no navegador
+rem (tela "Configurando" na primeira vez e depois o proprio Protocolo Zero).
+rem O Node.js vem junto (instalar\node). Na primeira vez (ou quando o projeto passa a usar outra versao),
+rem ele e preparado em runtime\win-x64, sem instalar nada no sistema. So se isso falhar e baixado do site oficial.
+if "%PZ_OCULTO%"=="1" goto comecar
+set "PZ_OCULTO=1"
+set "PZ_BAT=%~f0"
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -FilePath $env:PZ_BAT -WorkingDirectory (Split-Path $env:PZ_BAT) -WindowStyle Hidden"
+if errorlevel 1 goto comecar
+exit /b
+
+:comecar
 chcp 65001 >nul
 title Protocolo Zero
 cd /d "%~dp0"
-rem Protocolo Zero: abre com dois cliques (Windows).
-rem O Node.js vem junto (instalar\node). Na primeira vez (ou quando o projeto passa a usar outra versao),
-rem ele e preparado em runtime\win-x64. So se isso falhar e baixado do site oficial.
 set "PZ_NODE=%~dp0runtime\win-x64\node.exe"
 set "PZ_ARGS="
+set "PZ_PAGINA="
+if not exist "runtime" mkdir "runtime"
 if not exist "%PZ_NODE%" goto preparar
 if not exist "instalar\node\versao.txt" goto abrir
 fc /b "instalar\node\versao.txt" "runtime\win-x64\versao.txt" >nul 2>&1
 if not errorlevel 1 goto abrir
 
 :preparar
-if not exist "runtime" mkdir "runtime"
 if exist "runtime\estado.js" del /q "runtime\estado.js"
 rem Primeira vez: mostra a tela "Configurando" enquanto prepara.
-if not exist "%PZ_NODE%" start "" "%~dp0public\configurando.html"
+if not exist "%PZ_NODE%" call :pagina
 if not exist "%PZ_NODE%" set "PZ_ARGS=--sem-navegador"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0instalar\instalar-node.ps1" -Raiz "%~dp0."
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0instalar\instalar-node.ps1" -Raiz "%~dp0."
 if not errorlevel 1 goto abrir
 rem Nao deu para atualizar: segue com a versao anterior, se houver.
 if exist "%PZ_NODE%" goto abrir
@@ -29,27 +40,24 @@ set "PZ_NODE=node"
 
 :abrir
 if exist "%~dp0ia-modelos" set "OLLAMA_MODELS=%~dp0ia-modelos"
-echo.
-echo  Protocolo Zero aberto. Deixe esta janela aberta enquanto usa (fechar = sair).
-echo.
-"%PZ_NODE%" server\index.js %PZ_ARGS%
-if errorlevel 1 pause
+rem Para fechar: botao "Fechar o Protocolo Zero" no menu do proprio programa.
+"%PZ_NODE%" server\index.js %PZ_ARGS% >"runtime\servidor.log" 2>&1
+rem Fechou por erro ao abrir: o servidor grava a etapa "servidor" e a tela "Configurando" explica.
+if errorlevel 1 findstr /c:"'servidor'" "runtime\estado.js" >nul 2>&1 && call :pagina
 exit /b
 
 :falhou
-findstr /c:"antivirus" "runtime\estado.js" >nul 2>&1 && goto antivirus
+if not exist "runtime\estado.js" goto falhou-generico
+findstr /c:"antivirus" "runtime\estado.js" >nul 2>&1 && goto avisar
+:falhou-generico
 >"runtime\estado.js" echo window.PZ_ESTADO = { etapa: 'falhou' };
-echo.
-echo  Nao foi possivel preparar o Node.js. Veja as instrucoes na tela "Configurando".
-echo  Resumo: instale a versao LTS de https://nodejs.org e abra o Protocolo Zero de novo.
-echo.
-pause
+:avisar
+call :pagina
 exit /b
 
-:antivirus
-echo.
-echo  Provavel bloqueio do antivirus: ele impediu a preparacao do Node.js.
-echo  Adicione esta pasta como excecao no antivirus (ou desative-o por alguns minutos),
-echo  abra o Protocolo Zero de novo e, se desativou, ligue o antivirus de novo depois.
-echo.
-pause
+rem Abre a tela "Configurando" uma vez (ela mostra o andamento, os erros e como resolver).
+:pagina
+if defined PZ_PAGINA exit /b
+set "PZ_PAGINA=1"
+start "" "%~dp0public\configurando.html"
+exit /b

@@ -3,7 +3,8 @@ import { api } from '../api.js';
 import { aoAtualizar } from '../app.js';
 import { NUMEROS, FICHAS } from '../guia.js';
 import { secaoEnergia } from '../energia.js';
-import { painelIniciar, painelAtualizar, cartaoSugestaoIA, irParaAtualizar } from '../iniciador.js';
+import { painelIniciar, cartaoSugestaoIA } from '../iniciador.js';
+import { navegar } from '../app.js';
 
 function topografia() {
   const ns = 'http://www.w3.org/2000/svg';
@@ -28,12 +29,13 @@ function topografia() {
 }
 
 export async function render(raiz, { estado, args = [] }) {
+  // Endereço antigo (#/inicio/atualizar): as atualizações ficam agora em Ajustes.
+  if (args[0] === 'atualizar') return navegar('ajustes/atualizacoes');
   const area = h('div');
   // O painel "Iniciar" fica fora do redesenho para não perder o acompanhamento ao vivo.
   const configurado0 = estado.servidor?.config?.configurado;
   // Iniciar (sem internet: descompacta e configura) e Atualizar (internet: baixa compactado).
   const painel = configurado0 ? painelIniciar({ aoTerminar: () => desenhar() }) : null;
-  const painelAtu = configurado0 ? painelAtualizar({ aoTerminar: () => setTimeout(() => painel?.recarregar(), 300) }) : null;
   const sugestao = h('div');
   // Energia sem rede elétrica (fora do redesenho: guarda as escolhas do usuário).
   const energia = h('div');
@@ -70,7 +72,6 @@ export async function render(raiz, { estado, args = [] }) {
 
       secaoInstalar(catalogo, s),
       painel,
-      painelAtu,
       sugestao,
       !s?.ollama?.online && configurado
         ? aviso('', h('b', {}, 'O motor de IA (Ollama) não está rodando. '), 'Clique em "Iniciar Protocolo Zero" para ligá-lo; se ele não estiver instalado, use "Atualizar".')
@@ -101,7 +102,6 @@ export async function render(raiz, { estado, args = [] }) {
   }
 
   await desenhar();
-  if (args[0] === 'atualizar') requestAnimationFrame(irParaAtualizar);
   // Redesenha quando uma transferência termina (novos itens na biblioteca).
   let concluidas = estado.tarefas.filter((t) => t.estado === 'concluido').length;
   const parar = aoAtualizar((tipo) => {
@@ -115,7 +115,6 @@ export async function render(raiz, { estado, args = [] }) {
   return () => {
     parar();
     painel?.destruir();
-    painelAtu?.destruir();
   };
 }
 

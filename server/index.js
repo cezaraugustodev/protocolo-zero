@@ -726,8 +726,18 @@ rota('POST', /^\/api\/iniciar\/cancelar$/, async (req, res) => {
 // ---------- Atualizar (tudo que usa internet) ----------
 rota('GET', /^\/api\/atualizacoes$/, async (req, res, url) =>
   json(res, 200, await verificarAtualizacoes(config, { forcar: url.searchParams.has('forcar') })));
-// Reinicia o programa (depois de instalar uma versão nova). A janela preta continua aberta:
-// este processo só espera o novo terminar.
+// Reinicia o programa (depois de instalar uma versão nova). O primeiro processo continua aberto,
+// só esperando o novo terminar.
+// Fecha o Protocolo Zero (ele roda sem janela: este é o jeito de sair).
+rota('POST', /^\/api\/sair$/, async (req, res) => {
+  json(res, 200, { ok: true });
+  setTimeout(async () => {
+    console.log('\n  Protocolo Zero fechado pelo usuário.');
+    await pararKiwix().catch(() => {});
+    process.exit(0);
+  }, 300);
+});
+
 rota('POST', /^\/api\/programa\/reiniciar$/, async (req, res) => {
   if (haTarefasAtivas() || atualizando() || iniciando()) return erro(res, 409, 'Espere os downloads e a preparação terminarem antes de reiniciar.');
   json(res, 200, { ok: true, pid: process.pid });
@@ -1583,9 +1593,9 @@ const relogiosProcura = [];
 
 /**
  * Troca este processo por um novo, com a versão do programa que acabou de ser instalada.
- * O primeiro processo (o que a janela preta abriu) fica só cuidando dos reinícios: inicia o novo
- * processo na mesma janela e, se ele pedir para reiniciar de novo (código 75), inicia outro.
- * Assim nunca se acumulam processos parados, e a janela preta continua igual.
+ * O primeiro processo (o que o "Iniciar Protocolo Zero" abriu) fica só cuidando dos reinícios: inicia
+ * o novo processo e, se ele pedir para reiniciar de novo (código 75), inicia outro.
+ * Assim nunca se acumulam processos parados.
  */
 const CODIGO_REINICIAR = 75;
 async function reiniciarProcesso() {
@@ -1665,7 +1675,7 @@ async function principal() {
   const url = `http://localhost:${porta}`;
   console.log(`\n  Protocolo Zero rodando em ${url}`);
   console.log(`  Dados em: ${DADOS}`);
-  console.log('  Para encerrar, feche esta janela ou pressione Ctrl+C.\n');
+  console.log('  Para encerrar, use "Fechar o Protocolo Zero" no menu do programa (ou Ctrl+C no terminal).\n');
   if (kiwixLigado) iniciarKiwix().catch((e) => console.error('[kiwix]', e.message));
   if (MODO_AUTO) {
     console.log('  Modo atualização automática: atualiza e fecha sozinho quando ninguém estiver usando.');
@@ -1687,5 +1697,10 @@ async function principal() {
 
 principal().catch((e) => {
   console.error('Falha ao iniciar:', e);
+  // Sem janela preta: o "Iniciar Protocolo Zero" abre a tela "Configurando", que explica o problema.
+  try {
+    fs.mkdirSync(path.join(RAIZ, 'runtime'), { recursive: true });
+    fs.writeFileSync(path.join(RAIZ, 'runtime', 'estado.js'), "window.PZ_ESTADO = { etapa: 'servidor' };\n");
+  } catch {}
   process.exit(1);
 });

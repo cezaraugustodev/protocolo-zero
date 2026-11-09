@@ -1,5 +1,5 @@
 // Shell da aplicação: navegação, estado global e atualização periódica.
-import { h, icone, toast } from './ui.js';
+import { h, icone, toast, confirmar } from './ui.js';
 import { api, servidorFechado } from './api.js';
 import { iniciarIndexador, statusIndexador } from './indexador.js';
 import * as inicio from './telas/inicio.js';
@@ -87,10 +87,23 @@ function renderizarRodape() {
           h('i', { class: 'ponto ok pulsa' }), 'Versão nova instalada — Reiniciar agora')
       : null,
     !s.reiniciar && s.atualizacoes?.quantidade
-      ? h('a', { class: 'pilula-status link', href: '#/inicio/atualizar' }, h('i', { class: 'ponto ceu' }), `${s.atualizacoes.quantidade} atualização(ões) disponível(is)`)
+      ? h('a', { class: 'pilula-status link', href: '#/ajustes/atualizacoes' }, h('i', { class: 'ponto ceu' }), `${s.atualizacoes.quantidade} atualização(ões) disponível(is)`)
       : null,
     h('div', { class: 'pilula-status' }, h('i', { class: 'ponto' }), `Livre no disco: ${(s.disco.livre / 1e9).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} GB`),
+    h('button', { class: 'pilula-status link botao-sair', title: 'Fecha o Protocolo Zero neste computador (ele roda sem janela)', onclick: fecharPrograma }, icone('x', 14), 'Fechar o Protocolo Zero'),
   ].filter(Boolean));
+}
+
+// Fecha o Protocolo Zero (ele roda sem janela preta; este é o jeito de sair).
+async function fecharPrograma() {
+  if (!(await confirmar('Fechar o Protocolo Zero? Os downloads em andamento param e continuam da próxima vez que ele for aberto.', { botao: 'Fechar' }))) return;
+  try {
+    await api.post('/api/sair');
+  } catch {}
+  document.body.replaceChildren(h('main', { class: 'fechado' },
+    h('img', { src: '/icone.svg', alt: '', width: 56, height: 56 }),
+    h('h1', {}, 'O Protocolo Zero foi fechado'),
+    h('p', {}, 'Para abrir de novo, clique duas vezes em ', h('b', {}, 'Iniciar Protocolo Zero'), ' na pasta do programa. Já pode fechar esta aba.')));
 }
 
 // Reinicia o programa com a versão nova e recarrega a página quando ele voltar.
@@ -108,7 +121,7 @@ async function reiniciarPrograma() {
         if (r.ok && (await r.json()).pid !== pid) return location.reload();
       } catch {}
     }
-    toast('O Protocolo Zero não voltou sozinho. Feche a janela preta e abra de novo.', 'erro');
+    toast('O Protocolo Zero não voltou sozinho. Abra de novo pelo "Iniciar Protocolo Zero".', 'erro');
   } catch (e) {
     toast(e.message, 'erro');
   } finally {
@@ -129,7 +142,7 @@ async function atualizarEstado() {
     estado.ouvintes.forEach((f) => f('estado'));
   } catch {
     document.getElementById('lateral-rodape').replaceChildren(
-      h('div', { class: 'pilula-status' }, h('i', { class: 'ponto erro' }), 'Servidor fechado — rode npm start')
+      h('div', { class: 'pilula-status' }, h('i', { class: 'ponto erro' }), 'Fechado — abra pelo "Iniciar Protocolo Zero"')
     );
   }
 }
@@ -174,8 +187,8 @@ async function mostrar() {
     if (servidorFechado(e)) {
       telaComErroDeServidor = true;
       conteudo.append(h('div', { class: 'aviso erro' }, icone('alerta'),
-        h('div', {}, h('b', {}, 'O servidor do Protocolo Zero está fechado. '),
-          'Abra o terminal na pasta do projeto e rode ', h('code', {}, 'npm start'), '. Esta tela recarrega sozinha quando ele voltar. ',
+        h('div', {}, h('b', {}, 'O Protocolo Zero está fechado. '),
+          'Para abrir de novo, clique duas vezes em ', h('b', {}, 'Iniciar Protocolo Zero'), ' na pasta do programa. Esta tela recarrega sozinha quando ele voltar. ',
           h('button', { class: 'botao pequeno', onclick: mostrar }, 'Tentar de novo'))));
     } else conteudo.append(h('div', { class: 'aviso erro' }, `Erro ao abrir esta tela: ${e.message}`));
   }

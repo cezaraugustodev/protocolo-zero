@@ -31,6 +31,11 @@
   #ajuda-antivirus ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
   .antivirus #ajuda-antivirus { display: grid; }
   .antivirus #andamento { display: none; }
+  #ajuda-servidor { display: none; text-align: left; justify-items: stretch; }
+  #ajuda-servidor h2 { margin: 0; font-size: 19px; color: var(--erro); }
+  #ajuda-servidor ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+  .servidor #ajuda-servidor { display: grid; }
+  .servidor #andamento { display: none; }
   .falhou #andamento { display: none; }
 </style>
 </head>
@@ -41,28 +46,37 @@
   <div class="cartao" id="andamento">
     <div class="loader" aria-hidden="true"></div>
     <b id="passo">Preparando os componentes do Protocolo Zero…</b>
-    <small id="detalhe">Acompanhe também na janela preta. Não feche ela.</small>
+    <small id="detalhe">Leva poucos segundos. O Protocolo Zero abre sozinho nesta aba.</small>
   </div>
   <div class="cartao" id="ajuda-antivirus" role="alert">
     <h2>Provável bloqueio do antivírus</h2>
     <p>O antivírus confere cada programa novo antes de deixar usar. Às vezes ele bloqueia o <b>Node.js</b>, o programa que faz o Protocolo Zero funcionar, por ser novo no computador. Não é vírus: ele é gratuito e vem do site oficial (nodejs.org).</p>
     <ol>
       <li>No antivírus, adicione a pasta do Protocolo Zero como <b>exceção</b>, ou desative o antivírus só por alguns minutos.</li>
-      <li>Feche a janela preta e abra <b>Iniciar Protocolo Zero</b> de novo.</li>
+      <li>Abra <b>Iniciar Protocolo Zero</b> de novo.</li>
       <li>Se desativou, <b>ligue o antivírus de novo</b> assim que o Protocolo Zero abrir.</li>
+    </ol>
+  </div>
+  <div class="cartao" id="ajuda-servidor" role="alert">
+    <h2>O Protocolo Zero não conseguiu abrir</h2>
+    <p>Algo impediu o programa de começar. Na maioria das vezes, abrir de novo resolve.</p>
+    <ol>
+      <li>Abra <b>Iniciar Protocolo Zero</b> de novo.</li>
+      <li>Se acontecer outra vez, reinicie o computador e tente mais uma vez.</li>
+      <li>Ainda não abriu? Os detalhes técnicos ficam no arquivo <code>runtime\servidor.log</code>, dentro da pasta do Protocolo Zero: mande para quem cuida do computador.</li>
     </ol>
   </div>
   <div class="cartao" id="ajuda" role="alert">
     <h2>Não foi possível preparar o programa que faz o Protocolo Zero funcionar</h2>
     <p>Ele se chama <b>Node.js</b> e é gratuito. Instale você mesmo, uma vez só:</p>
     <ol id="passos-ajuda"></ol>
-    <small>Se você tem internet e quer tentar de novo do jeito automático, é só fechar a janela preta e abrir o Protocolo Zero outra vez.</small>
+    <small>Se você tem internet e quer tentar de novo do jeito automático, é só abrir o Protocolo Zero outra vez.</small>
   </div>
   <small id="rodape">Se esta página não mudar sozinha em alguns minutos, abra <a href="http://localhost:4321/">http://localhost:4321</a>.</small>
 </main>
 <script>
   var PASSOS = {
-    instalando: ['Preparando os componentes do Protocolo Zero…', 'Leva poucos segundos. Acompanhe também na janela preta.'],
+    instalando: ['Preparando os componentes do Protocolo Zero…', 'Leva poucos segundos. O Protocolo Zero abre sozinho nesta aba.'],
     baixando: ['Baixando os componentes do site oficial…', 'A cópia que veio junto não funcionou; baixando de nodejs.org (cerca de 30 MB).'],
     pronto: ['Iniciando…', 'Quase lá. A configuração continua na próxima tela.']
   };
@@ -71,7 +85,7 @@
   var AJUDA = {
     windows: ['Abra <a href="https://nodejs.org/pt/download" target="_blank" rel="noopener">nodejs.org/pt/download</a> e baixe o <b>instalador para Windows</b> da versão <b>LTS</b>.',
       'Abra o arquivo baixado e clique em <b>Next</b> (Avançar) até <b>Finish</b> (Concluir).',
-      'Feche a janela preta e abra <b>Iniciar Protocolo Zero</b> de novo.'],
+      'Abra <b>Iniciar Protocolo Zero</b> de novo.'],
     mac: ['Abra <a href="https://nodejs.org/pt/download" target="_blank" rel="noopener">nodejs.org/pt/download</a> e baixe o <b>instalador para macOS</b> (.pkg) da versão <b>LTS</b>.',
       'Abra o arquivo baixado e siga os passos até o fim.',
       'Feche a janela do Terminal e abra <b>Iniciar Protocolo Zero</b> de novo.'],
@@ -82,6 +96,11 @@
   document.getElementById('passos-ajuda').innerHTML = AJUDA[so].map(function (t) { return '<li>' + t + '</li>'; }).join('');
 
   function mostrar(etapa) {
+    if (etapa === 'servidor') {
+      document.body.classList.add('servidor');
+      document.getElementById('rodape').style.display = 'none';
+      return;
+    }
     if (etapa === 'antivirus') {
       document.body.classList.add('antivirus');
       document.getElementById('rodape').style.display = 'none';

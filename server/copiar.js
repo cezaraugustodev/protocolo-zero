@@ -216,7 +216,7 @@ macOS ........ clique duas vezes em "Iniciar Protocolo Zero.command"
                (se o Mac bloquear: clique com o botão direito > Abrir)
 Linux ........ rode "./iniciar-protocolo-zero.sh" no terminal (ou clique duas vezes, se o sistema permitir)
 
-O navegador abre sozinho. Para fechar, feche a janela preta do Protocolo Zero.
+O navegador abre sozinho. Para fechar, use "Fechar o Protocolo Zero" no menu do programa.
 
 RODAR DIRETO DO PENDRIVE OU HD
 ------------------------------

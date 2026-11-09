@@ -1,9 +1,9 @@
 // Chamadas ao servidor local. Todas as escritas levam o cabeçalho de segurança.
 const SEGURANCA = { 'x-protocolo-zero': '1' };
 
-export const SERVIDOR_FECHADO = 'O servidor do Protocolo Zero está fechado. Abra o terminal na pasta do projeto e rode: npm start';
+export const SERVIDOR_FECHADO = 'O Protocolo Zero está fechado. Para abrir de novo, clique duas vezes em "Iniciar Protocolo Zero" na pasta do programa.';
 export const servidorFechado = (e) => e?.message === SERVIDOR_FECHADO;
-// "Failed to fetch" = o servidor local não respondeu (janela do npm start fechada ou travada).
+// "Failed to fetch" = o servidor local não respondeu (fechado ou travado).
 const rede = (e) => {
   if (e?.name === 'TypeError') throw new Error(SERVIDOR_FECHADO);
   throw e;

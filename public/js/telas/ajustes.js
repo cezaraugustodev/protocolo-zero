@@ -1,9 +1,22 @@
 import { h, icone, bytes, aviso, toast, confirmar, cabecalho } from '../ui.js';
 import { api } from '../api.js';
-import { cartaoSugestaoIA } from '../iniciador.js';
+import { cartaoSugestaoIA, painelAtualizar } from '../iniciador.js';
 
-export async function render(raiz, { estado }) {
-  raiz.append(cabecalho('Sistema', 'Ajustes', 'Atualizações, modelos de IA, aparência e onde os dados ficam guardados.'));
+// Abas: #/ajustes (Geral) e #/ajustes/atualizacoes (Atualizações).
+const ABAS = [['geral', 'Geral', 'ajustes', '#/ajustes'], ['atualizacoes', 'Atualizações', 'atualizar', '#/ajustes/atualizacoes']];
+
+export async function render(raiz, { estado, args = [] }) {
+  const aba = ['atualizacoes', 'atualizar'].includes(args[0]) ? 'atualizacoes' : 'geral';
+  const pendentes = estado.servidor?.atualizacoes?.quantidade || 0;
+  raiz.append(
+    cabecalho('Sistema', 'Ajustes', 'Modelos de IA, aparência, atualizações e onde os dados ficam guardados.'),
+    h('nav', { class: 'abas', role: 'tablist', 'aria-label': 'Partes dos ajustes' },
+      ABAS.map(([id, nome, ic, href]) => h('a', { class: `aba ${aba === id ? 'ativa' : ''}`, role: 'tab', href, 'aria-selected': String(aba === id) },
+        icone(ic, 16), nome,
+        id === 'atualizacoes' && pendentes ? h('span', { class: 'aba-contador', title: `${pendentes} atualização(ões) disponível(is)` }, String(pendentes)) : null))));
+  // O painel "Atualizar" fica fora do redesenho para não perder o acompanhamento ao vivo.
+  const painel = aba === 'atualizacoes' ? painelAtualizar() : null;
+  if (painel) raiz.append(painel);
   const area = h('div', { class: 'pilha' });
   raiz.append(area);
 
@@ -22,8 +35,11 @@ export async function render(raiz, { estado }) {
     })();
     const personalizado = h('input', { type: 'text', placeholder: 'ex.: llama3.2:3b', style: { maxWidth: '260px' } });
 
+    if (aba === 'atualizacoes') {
+      area.replaceChildren(cartaoAuto(au, s.plataforma));
+      return;
+    }
     area.replaceChildren(
-      cartaoAuto(au, s.plataforma),
       // ---- IA ----
       h('div', { class: 'cartao pilha' },
         h('div', { class: 'linha entre' },
@@ -114,7 +130,11 @@ export async function render(raiz, { estado }) {
           h('span', { class: `etiqueta ${s.ferramentas.kiwix ? 'musgo' : ''}` }, `Kiwix: ${s.ferramentas.kiwix ? 'instalado' : 'não instalado'}`),
           h('span', { class: `etiqueta ${s.ferramentas.pmtiles ? 'musgo' : ''}` }, `pmtiles: ${s.ferramentas.pmtiles ? 'instalado' : 'não instalado'}`),
           h('span', { class: `etiqueta ${s.ferramentas.vendor ? 'musgo' : ''}` }, `Leitor de PDF e mapas: ${s.ferramentas.vendor ? 'pronto' : 'não baixado'}`)),
-        h('small', {}, 'São baixados automaticamente quando necessários.'))
+        h('small', {}, 'São baixados automaticamente quando necessários.')),
+      h('a', { class: 'cartao linha entre link-cartao', href: '#/ajustes/atualizacoes' },
+        h('div', { class: 'linha' }, h('span', { class: 'icone-bolha' }, icone('atualizar')),
+          h('div', {}, h('h3', { style: { margin: 0 } }, 'Atualizações'), h('small', { class: 'suave' }, 'Programa, enciclopédias, livros e IA; e a atualização automática ao ligar o computador.'))),
+        icone('direita', 18))
     );
   }
 
@@ -194,4 +214,5 @@ export async function render(raiz, { estado }) {
   }
 
   await desenhar();
+  return () => painel?.destruir();
 }

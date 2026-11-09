@@ -27,14 +27,9 @@ async function lerFluxo(url, onEvento, sinal) {
   }
 }
 
-/** Leva o usuário ao painel "Atualizar" (na tela Início). */
+/** Leva o usuário às atualizações (aba "Atualizações" em Ajustes). */
 export function irParaAtualizar() {
-  const alvo = document.getElementById('painel-atualizar');
-  if (alvo) {
-    alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    alvo.classList.add('destaque');
-    setTimeout(() => alvo.classList.remove('destaque'), 1600);
-  } else location.hash = '#/inicio/atualizar';
+  location.hash = '#/ajustes/atualizacoes';
 }
 
 /**
