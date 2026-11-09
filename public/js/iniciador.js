@@ -1,10 +1,14 @@
 // Painéis "Iniciar Protocolo Zero" (offline: descompacta e configura) e "Atualizar" (internet: baixa
 // compactado), com checklist ao vivo, e o cartão de sugestão de modelo de IA.
-import { h, icone, bytes, toast, markdown, barra } from './ui.js';
+import { h, icone, bytes, toast, markdown, barra, confirmar } from './ui.js';
 import { api } from './api.js';
 
 const ICONE_ESTADO = { ok: 'ok', aviso: 'alerta', erro: 'x', pulado: 'seta', pendente: 'seta', rodando: 'atualizar' };
 const ROTULO_ESTADO = { ok: 'OK', aviso: 'Atenção', erro: 'Problema', pulado: 'Não se aplica', pendente: 'Aguardando', rodando: 'Em andamento…' };
+// O que está marcado na lista de atualizações (guardado enquanto o programa está aberto).
+const chaveAtu = (i) => `${i.tipo}:${i.id || ''}`;
+const escolhaAtu = { desmarcados: new Set(), catalogo: true, rotular: null };
+
 const ROTULO_TIPO = {
   conteudo: 'Conteúdo', 'zim-nova': 'Versão nova', modelo: 'Modelo de IA', ollama: 'Motor de IA',
   kiwix: 'Leitor', componentes: 'Componentes', programa: 'Programa',
@@ -65,7 +69,7 @@ function criarPainel(cfg) {
   async function iniciar() {
     explicacao = null;
     try {
-      rel = await api.post(cfg.rota);
+      rel = await api.post(cfg.rota, cfg.corpo?.(info));
       desenhar();
       agendar(800);
     } catch (e) {
@@ -245,6 +249,8 @@ export function painelAtualizar({ aoTerminar } = {}) {
       if (n) return { titulo: `${n} atualização(ões) disponível(is)`, sub: `${info.total ? `${bytes(info.total)} para baixar. ` : ''}Nada é baixado sem o seu clique. ${quando}.`, icone: 'nuvem' };
       return { titulo: 'Tudo atualizado', sub: `${quando}. O Protocolo Zero procura atualizações sozinho de tempos em tempos.`, icone: 'ok' };
     },
+    // Só o que está marcado na lista (e o catálogo, se marcado).
+    corpo: (info) => ({ itens: (info?.itens || []).filter((i) => !escolhaAtu.desmarcados.has(chaveAtu(i))).map(chaveAtu), catalogo: escolhaAtu.catalogo }),
     botao(rel, info, { iniciar, recarregarInfo }) {
       const n = info?.itens?.length || 0;
       const procurar = h('button', { class: 'botao fantasma' }, icone('atualizar', 16), 'Procurar atualizações');
@@ -253,19 +259,76 @@ export function painelAtualizar({ aoTerminar } = {}) {
         procurar.lastChild.textContent = 'Procurando…';
         await recarregarInfo(true);
       });
+      const atualizarAgora = h('button', { class: 'botao primario', onclick: iniciar });
+      escolhaAtu.rotular = () => {
+        const marcados = (info?.itens || []).filter((i) => !escolhaAtu.desmarcados.has(chaveAtu(i)));
+        const total = marcados.reduce((a, i) => a + (i.tamanho || 0), 0);
+        const algo = marcados.length || escolhaAtu.catalogo;
+        atualizarAgora.disabled = !algo;
+        atualizarAgora.replaceChildren(icone('nuvem', 17),
+          !algo ? 'Nada selecionado' : marcados.length === n ? `Atualizar tudo${total ? ` (${bytes(total)})` : ''}` : `Atualizar selecionados (${marcados.length}${total ? ` · ${bytes(total)}` : ''})`);
+      };
+      escolhaAtu.rotular();
       return h('div', { class: 'linha', style: { gap: '8px' } },
         procurar,
-        n ? h('button', { class: 'botao primario', onclick: iniciar }, icone('nuvem', 17), `Atualizar agora${info.total ? ` (${bytes(info.total)})` : ''}`) : null);
+        info?.online === false ? null : atualizarAgora);
     },
-    extra(rel, info) {
+    extra(rel, info, { recarregarInfo }) {
       const partes = [];
-      if (info?.itens?.length) {
-        partes.push(h('ul', { class: 'lista-atualizacoes' },
-          info.itens.map((i) =>
+      if (info && info.online !== false) {
+        const marcar = (chave, sim) => {
+          if (sim) escolhaAtu.desmarcados.delete(chave);
+          else escolhaAtu.desmarcados.add(chave);
+          escolhaAtu.rotular?.();
+        };
+        const naoBaixar = async (i) => {
+          const texto = i.tipo === 'conteudo'
+            ? `Tirar “${i.titulo}” da lista? Ele deixa de ser baixado nas atualizações. Se mudar de ideia, marque de novo em "Instalar conteúdo".`
+            : `Não baixar a versão nova de “${i.titulo.replace(/ — versão .*$/, '')}”? A versão que você já tem continua funcionando.`;
+          if (!(await confirmar(texto, { botao: 'Não baixar' }))) return;
+          try {
+            await api.post('/api/atualizacoes/ignorar', { tipo: i.tipo, id: i.id, versao: i.versao });
+            escolhaAtu.desmarcados.delete(chaveAtu(i));
+            await recarregarInfo(false);
+            toast('Tirado da lista de atualizações.');
+          } catch (e) {
+            toast(e.message, 'erro');
+          }
+        };
+        const caixa = (marcado, aoMudar, rotulo) => h('input', { type: 'checkbox', checked: marcado, 'aria-label': rotulo, onchange: (e) => aoMudar(e.target.checked) });
+        // O programa vem primeiro; e aparece mesmo quando está em dia.
+        const itens = [...(info.itens || [])].sort((a, b) => (b.tipo === 'programa') - (a.tipo === 'programa'));
+        const dataProg = info.programa?.data ? new Date(info.programa.data).toLocaleDateString('pt-BR') : '';
+        const linhaPrograma = itens.some((i) => i.tipo === 'programa')
+          ? null
+          : h('li', { class: 'lista-atualizacoes-em-dia' },
+              h('span', { class: 'lista-atualizacoes-marca', title: 'Em dia' }, icone('ok', 16)),
+              h('span', { class: 'etiqueta' }, ROTULO_TIPO.programa),
+              h('span', { class: 'lista-atualizacoes-titulo' }, 'Programa Protocolo Zero',
+                h('small', { class: 'suave' }, info.programa ? ` · em dia${dataProg ? ` (última versão em ${dataProg})` : ''}` : ' · clique em "Procurar atualizações" para conferir')),
+              h('small', { class: 'suave' }, ''),
+              h('span'));
+        partes.push(h('div', { class: 'linha entre lista-atualizacoes-topo' },
+          h('small', { class: 'suave' }, 'Marque o que quer atualizar agora. O que ficar desmarcado continua na lista para depois.'),
+          itens.length ? h('div', { class: 'linha', style: { gap: '4px' } },
+            h('button', { class: 'botao pequeno fantasma', onclick: () => { escolhaAtu.desmarcados.clear(); escolhaAtu.catalogo = true; recarregarInfo(false); } }, 'Marcar tudo'),
+            h('button', { class: 'botao pequeno fantasma', onclick: () => { itens.forEach((i) => escolhaAtu.desmarcados.add(chaveAtu(i))); escolhaAtu.catalogo = false; recarregarInfo(false); } }, 'Desmarcar tudo')) : null));
+        partes.push(h('ul', { class: 'lista-atualizacoes escolher' },
+          linhaPrograma,
+          h('li', { class: 'lista-atualizacoes-catalogo' },
+            h('label', { class: 'lista-atualizacoes-marca' }, caixa(escolhaAtu.catalogo, (v) => { escolhaAtu.catalogo = v; escolhaAtu.rotular?.(); }, 'Procurar fontes novas no catálogo')),
+            h('span', { class: 'etiqueta' }, 'Catálogo'),
+            h('span', { class: 'lista-atualizacoes-titulo' }, 'Procurar fontes novas no catálogo', h('small', { class: 'suave' }, ' · baixa as novas do seu pacote')),
+            h('small', { class: 'suave' }, '')),
+          itens.map((i) =>
             h('li', {},
+              h('label', { class: 'lista-atualizacoes-marca' }, caixa(!escolhaAtu.desmarcados.has(chaveAtu(i)), (v) => marcar(chaveAtu(i), v), `Atualizar ${i.titulo}`)),
               h('span', { class: 'etiqueta' }, ROTULO_TIPO[i.tipo] || i.tipo),
               h('span', { class: 'lista-atualizacoes-titulo' }, i.titulo, i.motivo === 'danificado' ? h('small', { class: 'suave' }, ' · arquivo danificado') : null),
-              h('small', { class: 'suave' }, i.tamanho ? `${i.aproximado ? '≈ ' : ''}${bytes(i.tamanho)}` : '')))));
+              h('small', { class: 'suave' }, i.tamanho ? `${i.aproximado ? '≈ ' : ''}${bytes(i.tamanho)}` : ''),
+              (i.tipo === 'conteudo' && i.motivo !== 'danificado') || i.tipo === 'zim-nova'
+                ? h('button', { class: 'botao pequeno fantasma lista-atualizacoes-tirar', title: 'Tirar da lista: não baixar este item', onclick: () => naoBaixar(i) }, icone('x', 13), 'Não baixar')
+                : h('span')))));
       }
       if (rel?.estado && rel.estado !== 'rodando') {
         const r = rel.resumo || {};

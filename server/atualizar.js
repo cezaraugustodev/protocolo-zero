@@ -6,7 +6,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { RAIZ, DADOS, PLATAFORMA, existe, lerJSON, gravarJSON, executar as executarCmd, registrarErro } from './util.js';
 import { carregarCatalogo, item as itemCatalogo, resolverZim } from './catalogo.js';
-import { criarTarefa, aguardarTarefa } from './tarefas.js';
+import { criarTarefa, aguardarTarefa as aguardarTarefaSo, cancelarTarefa } from './tarefas.js';
 import { instalarKiwix, instalarVendor, vendorInstalado, instalarOllama, caminhoKiwixServe, ligarOllama, ollamaInstalado } from './ferramentas.js';
 import { statusOllama, ollamaOnline } from './ollama.js';
 import { semTag } from './inteligencia.js';
@@ -106,9 +106,13 @@ async function pendenciasLocais(config) {
   return itens;
 }
 
+// Versão do programa instalada e se está em dia com o GitHub: { data, emDia }.
+let infoPrograma = null;
+
 /** Pendências que dependem da internet: novas versões de ZIM e do programa. */
 async function pendenciasRemotas() {
   const itens = [];
+  infoPrograma = null;
   const aguardando = await pacotes.pendentes();
   for (const it of (await bib.listar()).filter((i) => i.tipo === 'zim' && i.origem === 'catalogo')) {
     const c = await itemCatalogo(it.id);
@@ -123,9 +127,14 @@ async function pendenciasRemotas() {
   }
   const git = await estadoGit().catch(() => null);
   if (git?.atras > 0) itens.push({ tipo: 'programa', titulo: `Programa Protocolo Zero (${git.atras} melhoria(s))`, tamanho: 0, podeAplicar: git.limpo });
+  if (git) {
+    const data = await executarCmd('git', ['log', '-1', '--format=%cI'], { cwd: RAIZ, timeout: 15000 }).catch(() => '');
+    infoPrograma = { data: String(data).trim() || null, emDia: !(git.atras > 0) };
+  } else if (reinicioPendente) infoPrograma = { data: null, emDia: true };
   if (!git && !reinicioPendente) {
     // Instalado pelo ZIP: compara os arquivos com a versão publicada no GitHub.
     const v = await programa.verificar().catch(() => null);
+    if (v) infoPrograma = { data: v.atualizado ? v.data || null : (await lerJSON(path.join(DADOS, 'programa.json'), null))?.data || null, emDia: !!v.atualizado };
     if (v && !v.atualizado) {
       const data = v.data ? new Date(v.data).toLocaleDateString('pt-BR') : '';
       itens.push({ tipo: 'programa', titulo: `Programa Protocolo Zero (versão nova${data ? ` de ${data}` : ''})`, tamanho: v.bytes || 0, podeAplicar: true });
@@ -159,7 +168,7 @@ export async function verificarAtualizacoes(config, { forcar = false, semRede = 
     verificando ??= (async () => {
       const online = await temInternet();
       const remotas = online ? await pendenciasRemotas().catch(() => []) : ultima?.remotas || [];
-      ultima = { ...ultima, online, remotas, quandoRemoto: online ? Date.now() : ultima?.quandoRemoto || null, verificadoEm: Date.now() };
+      ultima = { ...ultima, online, remotas, programa: online ? infoPrograma : ultima?.programa || null, quandoRemoto: online ? Date.now() : ultima?.quandoRemoto || null, verificadoEm: Date.now() };
     })().finally(() => (verificando = null));
     await verificando;
   }
@@ -169,6 +178,7 @@ export async function verificarAtualizacoes(config, { forcar = false, semRede = 
   const remotas = (ultima?.remotas || []).filter((r) => {
     if (locais.some((l) => l.id && l.id === r.id)) return false;
     if (r.tipo !== 'zim-nova') return true;
+    if (config.versoesIgnoradas?.[r.id] === r.versao) return false; // o usuário pediu para não baixar
     // Já baixada (aguardando o Iniciar) ou já instalada?
     if (aguardando.some((p) => p.id === r.id && p.registro.versao === r.versao)) return false;
     return !(instalados.get(r.id)?.versao >= r.versao);
@@ -187,12 +197,29 @@ export const resumoAtualizacoes = () =>
 
 /**
  * ctx: { config, salvarConfig, instalarItem(id, {novaVersao}), baixarModeloTarefa, iniciar() }
+ * escolha (opcional): { itens: ['conteudo:<id>', 'programa:', …], catalogo: true|false } — atualiza só
+ * o que o usuário marcou. Sem escolha (atualização automática), atualiza tudo.
  */
-export function atualizarProtocoloZero(ctx) {
+export function atualizarProtocoloZero(ctx, escolha = null) {
   let baixou = 0;
+  const marcados = Array.isArray(escolha?.itens) ? new Set(escolha.itens.map(String)) : null;
+  const quer = (tipo, id = '') => !marcados || marcados.has(`${tipo}:${id}`);
+  const NAO_ESCOLHIDO = { estado: 'pulado', mensagem: 'Não selecionado' };
   return executor.iniciar(
     async ({ rel, rodar, sinal }) => {
       const passo = (id) => rel.passos.find((p) => p.id === id);
+      // Espera uma tarefa; se o usuário cancelar a atualização, cancela a tarefa também.
+      const aguardarTarefa = async (t) => {
+        if (!t) return null;
+        const parar = () => cancelarTarefa(t.id);
+        if (sinal.aborted) parar();
+        sinal.addEventListener('abort', parar, { once: true });
+        try {
+          return await aguardarTarefaSo(t);
+        } finally {
+          sinal.removeEventListener('abort', parar);
+        }
+      };
       const aguardarVarias = async (p, tarefas, rotulo) => {
         const validas = tarefas.filter(Boolean);
         let feitas = 0;
@@ -206,6 +233,7 @@ export function atualizarProtocoloZero(ctx) {
         }));
       };
       const resultadoTarefas = (res, falhasCriacao, okMsg) => {
+        if (sinal.aborted) return { estado: 'pulado', mensagem: 'Cancelado' };
         const erros = res.filter((r) => r && r.estado !== 'concluido');
         baixou += res.length - erros.length;
         const detalhes = [...erros.map((r) => `${r.titulo}: ${r.mensagem}`), ...falhasCriacao];
@@ -226,6 +254,7 @@ export function atualizarProtocoloZero(ctx) {
 
       // Novas fontes e links publicados: baixa só as novas do pacote que o usuário usa.
       await rodar('catalogo', async (p) => {
+        if (marcados && !escolha.catalogo) return NAO_ESCOLHIDO;
         p.mensagem = 'Consultando o catálogo publicado…';
         const n = await ctx.baixarNovidades({ sinal });
         if (n.semFonte) return { estado: 'pulado', mensagem: 'Este Protocolo Zero não tem endereço de catálogo publicado' };
@@ -243,9 +272,13 @@ export function atualizarProtocoloZero(ctx) {
 
       await rodar('componentes', async (p) => {
         if (await vendorInstalado()) return { mensagem: 'Já estão prontos' };
+        if (!quer('componentes')) return NAO_ESCOLHIDO;
         p.mensagem = 'Baixando componentes…';
         const t = await aguardarTarefa(criarTarefa({ tipo: 'ferramenta', titulo: 'Componentes de leitura de PDF e mapas', chave: 'ferramenta:vendor', fn: instalarVendor }));
-        if (t.estado !== 'concluido') throw new Error(t.mensagem);
+        if (t.estado !== 'concluido') {
+          if (sinal.aborted) return { estado: 'pulado', mensagem: 'Cancelado' };
+          throw new Error(t.mensagem);
+        }
         baixou++;
         return { mensagem: 'Baixados' };
       });
@@ -257,17 +290,22 @@ export function atualizarProtocoloZero(ctx) {
           if (await ligarOllama(ollamaOnline)) return { mensagem: 'Instalado — foi ligado' };
           throw new Error('O Ollama está instalado, mas não respondeu ao ser ligado');
         }
+        if (!quer('ollama')) return NAO_ESCOLHIDO;
         if (PLATAFORMA === 'linux') return { estado: 'aviso', mensagem: 'No Linux, instale uma vez pelo terminal: curl -fsSL https://ollama.com/install.sh | sh' };
         p.mensagem = 'Baixando e instalando o Ollama (instalador oficial)…';
         const t = await aguardarTarefa(criarTarefa({ tipo: 'ferramenta', titulo: 'Ollama (motor de IA)', chave: 'ferramenta:ollama', fn: (tf, s) => instalarOllama(tf, s, ollamaOnline) }));
-        if (t.estado !== 'concluido') throw new Error(t.mensagem);
+        if (t.estado !== 'concluido') {
+          if (sinal.aborted) return { estado: 'pulado', mensagem: 'Cancelado' };
+          throw new Error(t.mensagem);
+        }
         baixou++;
         return { mensagem: 'Instalado e rodando' };
       });
 
       await rodar('conteudo', async (p) => {
-        const lista = de('conteudo');
-        if (!lista.length) return { mensagem: 'Tudo o que foi selecionado já está baixado' };
+        const todos = de('conteudo');
+        const lista = todos.filter((i) => quer('conteudo', i.id));
+        if (!lista.length) return todos.length ? NAO_ESCOLHIDO : { mensagem: 'Tudo o que foi selecionado já está baixado' };
         const tarefas = [];
         const falhas = [];
         for (const i of lista) {
@@ -284,8 +322,9 @@ export function atualizarProtocoloZero(ctx) {
       });
 
       await rodar('novidades', async (p) => {
-        const lista = de('zim-nova');
-        if (!lista.length) return { mensagem: 'As enciclopédias estão na versão mais recente' };
+        const todas = de('zim-nova');
+        const lista = todas.filter((i) => quer('zim-nova', i.id));
+        if (!lista.length) return todas.length ? NAO_ESCOLHIDO : { mensagem: 'As enciclopédias estão na versão mais recente' };
         const tarefas = [];
         const falhas = [];
         for (const i of lista) {
@@ -304,8 +343,9 @@ export function atualizarProtocoloZero(ctx) {
         // Recalcula: o Ollama pode ter acabado de ser instalado.
         const st = await statusOllama();
         const tem = (n) => st.modelos.some((m) => semTag(m.nome) === semTag(n));
-        const faltam = [ctx.config.modeloChat, ctx.config.modeloEmbed].filter((n) => n && !tem(n));
-        if (!faltam.length) return { mensagem: 'Os modelos escolhidos já estão instalados' };
+        const todosFaltam = [ctx.config.modeloChat, ctx.config.modeloEmbed].filter((n) => n && !tem(n));
+        const faltam = todosFaltam.filter((n) => quer('modelo', n));
+        if (!faltam.length) return todosFaltam.length ? NAO_ESCOLHIDO : { mensagem: 'Os modelos escolhidos já estão instalados' };
         const res = await aguardarVarias(p, faltam.map((n) => ctx.baixarModeloTarefa(n)), 'Baixando modelos');
         return resultadoTarefas(res, [], (n) => `${n} modelo(s) baixado(s)`);
       });
@@ -318,14 +358,19 @@ export function atualizarProtocoloZero(ctx) {
           (await pacotes.pendentes()).some((x) => x.registro.tipo === 'zim') ||
           (ctx.config.itens || []).some((id) => cat.itens.find((i) => i.id === id)?.tipo === 'zim');
         if (!precisa) return { estado: 'pulado', mensagem: 'Nenhuma enciclopédia selecionada' };
+        if (!quer('kiwix')) return NAO_ESCOLHIDO;
         p.mensagem = 'Baixando o leitor Kiwix…';
         const t = await aguardarTarefa(criarTarefa({ tipo: 'ferramenta', titulo: 'Leitor Kiwix (Wikipédia offline)', chave: 'ferramenta:kiwix', fn: instalarKiwix }));
-        if (t.estado !== 'concluido') throw new Error(t.mensagem);
+        if (t.estado !== 'concluido') {
+          if (sinal.aborted) return { estado: 'pulado', mensagem: 'Cancelado' };
+          throw new Error(t.mensagem);
+        }
         baixou++;
         return { mensagem: 'Instalado' };
       });
 
       await rodar('programa', async (p) => {
+        if (!quer('programa')) return NAO_ESCOLHIDO;
         const git = await estadoGit({ buscar: false }).catch((e) => ({ erro: e.message }));
         if (!git) {
           // Instalado pelo ZIP: baixa do GitHub só os arquivos que mudaram.

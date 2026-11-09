@@ -744,7 +744,24 @@ rota('POST', /^\/api\/programa\/reiniciar$/, async (req, res) => {
   setTimeout(() => reiniciarProcesso().catch((e) => registrarErro('reiniciar', e)), 300);
 });
 
-rota('POST', /^\/api\/atualizar$/, async (req, res) => json(res, 200, atualizarProtocoloZero(contextoAtualizar())));
+// Atualizar: com { itens, catalogo }, só o que o usuário marcou; sem corpo, tudo.
+rota('POST', /^\/api\/atualizar$/, async (req, res) => {
+  const corpo = await lerCorpo(req, 1e5).catch(() => null);
+  const escolha = Array.isArray(corpo?.itens) ? { itens: corpo.itens.slice(0, 2000).map(String), catalogo: !!corpo.catalogo } : null;
+  json(res, 200, atualizarProtocoloZero(contextoAtualizar(), escolha));
+});
+// "Não baixar": tira um item da lista de atualizações.
+//  - conteúdo novo: sai da seleção (dá para marcar de novo em "Instalar conteúdo");
+//  - versão nova de enciclopédia: esta versão não é mais oferecida (a atual continua).
+rota('POST', /^\/api\/atualizacoes\/ignorar$/, async (req, res) => {
+  const { tipo, id, versao } = await lerCorpo(req, 1e4);
+  if (tipo === 'conteudo' && typeof id === 'string') {
+    await salvarConfig({ itens: (config.itens || []).filter((x) => x !== id) });
+  } else if (tipo === 'zim-nova' && typeof id === 'string' && typeof versao === 'string') {
+    await salvarConfig({ versoesIgnoradas: { ...(config.versoesIgnoradas || {}), [id]: versao } });
+  } else return erro(res, 400, 'Este item não pode ser tirado da lista');
+  json(res, 200, await verificarAtualizacoes(config, { semRede: true }));
+});
 rota('GET', /^\/api\/atualizar$/, async (req, res) => json(res, 200, await relatorioAtualizacao()));
 rota('POST', /^\/api\/atualizar\/cancelar$/, async (req, res) => {
   cancelarAtualizacao();
