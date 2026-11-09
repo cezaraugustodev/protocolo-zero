@@ -118,7 +118,8 @@ export async function guardar({ origem, destino, registro, sinal, tarefa }) {
 export const caminhoNoArmazem = (destinoRel) => absPacote(destinoRel);
 
 async function pacoteExiste(p) {
-  return p && (await existe(absPacote(p.arquivo)));
+  // Arquivo "bruto" (ZIM, mapa) já movido para o lugar final fica sem cópia no armazém (arquivo: null).
+  return !!(p && typeof p.arquivo === 'string' && p.arquivo && (await existe(absPacote(p.arquivo))));
 }
 
 /** Este pacote ainda precisa ser descompactado (ou movido) neste computador? */

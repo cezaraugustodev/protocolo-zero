@@ -46,7 +46,16 @@ export function gravarJSON(arquivo, dados) {
   const proxima = anterior.catch(() => {}).then(async () => {
     const tmp = `${arquivo}.${process.pid}.tmp`;
     await fsp.writeFile(tmp, JSON.stringify(dados, null, 2));
-    await fsp.rename(tmp, arquivo);
+    // No Windows, antivírus ou indexador podem prender o arquivo por um instante (EPERM/EBUSY): tenta de novo.
+    for (let tentativa = 0; ; tentativa++) {
+      try {
+        await fsp.rename(tmp, arquivo);
+        break;
+      } catch (e) {
+        if (tentativa >= 6 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+        await new Promise((r) => setTimeout(r, 50 * 2 ** tentativa));
+      }
+    }
   });
   filas.set(arquivo, proxima);
   return proxima;

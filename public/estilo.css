@@ -90,7 +90,7 @@ hr { border: 0; border-top: 1px solid var(--linha); margin: 24px 0; }
 /* Menu recolhido: só os ícones; o nome aparece ao passar o mouse (title). */
 .app.menu-recolhido { grid-template-columns: 68px 1fr; }
 .app.menu-recolhido .lateral { padding: 20px 10px; overflow-x: hidden; }
-.app.menu-recolhido .marca { justify-content: center; margin: -20px -10px 14px; padding: 0; }
+.app.menu-recolhido .marca { justify-content: center; margin: -20px -10px 18px; padding: 18px 0 16px; }
 .app.menu-recolhido .marca div,
 .app.menu-recolhido .nav-nome,
 .app.menu-recolhido .nav-titulo,
@@ -103,7 +103,7 @@ hr { border: 0; border-top: 1px solid var(--linha); margin: 24px 0; }
   border-right: 1px solid var(--linha); background: var(--superficie-2);
   display: flex; flex-direction: column; padding: 20px 14px;
 }
-.marca { display: flex; align-items: center; gap: 10px; height: 72px; margin: -20px -14px 14px; padding: 0 22px; border-bottom: 1px solid var(--linha); color: var(--tinta); }
+.marca { display: flex; align-items: center; gap: 10px; min-height: 76px; margin: -20px -14px 18px; padding: 18px 22px 16px; border-bottom: 1px solid var(--linha); color: var(--tinta); box-sizing: border-box; }
 .marca:hover { text-decoration: none; }
 .marca svg { flex: none; }
 .marca b { font-family: var(--serif); font-size: 19px; letter-spacing: -.01em; display: block; line-height: 1.1; }
@@ -613,7 +613,7 @@ mark { background: var(--alerta-suave); color: inherit; padding: 0 2px; border-r
   .app.menu-recolhido .marca div, .app.menu-recolhido .nav-nome, .app.menu-recolhido .nav-titulo { display: revert; }
   .app.menu-recolhido .lateral-rodape { display: grid; }
   .app.menu-recolhido .marca, .app.menu-recolhido .nav a { justify-content: flex-start; }
-  .app.menu-recolhido .marca { margin: -20px -14px 14px; padding: 0 22px; }
+  .app.menu-recolhido .marca { margin: -20px -14px 18px; padding: 18px 22px 16px; }
   .app.menu-recolhido .nav a { padding: 9px 11px; }
   .app.menu-recolhido .nav .contador { position: static; margin-left: auto; }
   .lateral { position: fixed; z-index: 40; left: 0; top: 0; width: 270px; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--sombra-forte); }
