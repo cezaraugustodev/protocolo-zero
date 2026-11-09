@@ -183,8 +183,11 @@ export async function render(raiz, { args, estado }) {
       const limites = [[cab.minLon, cab.minLat], [cab.maxLon, cab.maxLat]];
       if (!mapa) {
         area.replaceChildren();
-        mapa = new maplibregl.Map({ container: area, style: est, bounds: limites, maxBounds: [[cab.minLon - 2, cab.minLat - 2], [cab.maxLon + 2, cab.maxLat + 2]], attributionControl: { compact: true } });
+        mapa = new maplibregl.Map({ container: area, style: est, bounds: limites, maxBounds: [[cab.minLon - 2, cab.minLat - 2], [cab.maxLon + 2, cab.maxLat + 2]], attributionControl: { compact: true },
+          locale: { 'FullscreenControl.Enter': 'Ver em tela cheia', 'FullscreenControl.Exit': 'Sair da tela cheia' } });
         area.mapa = mapa; // acesso para diagnóstico
+        // Tela cheia: só o mapa ocupa a tela toda, cobrindo os menus (Esc ou o mesmo botão para sair).
+        mapa.addControl(new maplibregl.FullscreenControl(), 'top-right');
         mapa.addControl(new maplibregl.NavigationControl(), 'top-right');
         mapa.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
         mapa.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), 'top-right');

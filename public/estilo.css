@@ -761,6 +761,8 @@ mark { background: var(--alerta-suave); color: inherit; padding: 0 2px; border-r
 /* ---------- mapas ---------- */
 .mapa-area { display: grid; grid-template-columns: 1fr 320px; gap: 16px; height: calc(100vh - 160px); min-height: 420px; }
 .mapa { border-radius: var(--raio); overflow: hidden; border: 1px solid var(--linha); background: var(--superficie-2); position: relative; }
+.mapa:fullscreen, .mapa.maplibregl-pseudo-fullscreen { border: 0; border-radius: 0; }
+.mapa.maplibregl-pseudo-fullscreen { position: fixed !important; inset: 0; z-index: 60; width: auto !important; height: auto !important; }
 .mapa .vazio { position: absolute; inset: 0; display: grid; place-content: center; }
 
 /* ---------- modal e avisos ---------- */
