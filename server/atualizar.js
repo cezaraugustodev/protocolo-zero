@@ -99,7 +99,7 @@ async function pendenciasLocais(config) {
     const tem = (n) => st.modelos.some((m) => semTag(m.nome) === semTag(n));
     for (const n of [config.modeloChat, config.modeloEmbed]) {
       if (!n || tem(n)) continue;
-      const m = cat.modelos?.find((x) => semTag(x.tag) === semTag(n));
+      const m = [...(cat.modelos?.chat || []), ...(cat.modelos?.embed || [])].find((x) => semTag(x.tag) === semTag(n));
       itens.push({ tipo: 'modelo', id: n, titulo: `Modelo de IA ${m?.nome || n}`, tamanho: m?.tamanho || 0 });
     }
   }
