@@ -81,7 +81,7 @@ export async function render(raiz, { estado, args = [] }) {
         cartao('livro', 'Documentos', `${docs}`, 'PDFs, livros e textos', '', '#/biblioteca'),
         cartao('globo', 'Enciclopédias', `${zims}`, s?.kiwix?.ativo ? 'Abertas no leitor' : 'Wikipédia, iFixit…', 'ceu', '#/enciclopedia'),
         cartao('mapa', 'Mapas', `${mapas}`, 'Regiões offline', 'musgo', '#/mapas'),
-        cartao('disco', 'Ocupado', bytes(total), `${midias} vídeos/áudios · ${bytes(s?.disco?.livre)} livres`, 'alerta', '#/ajustes')),
+        cartao('disco', 'Ocupado', bytes(total), `${midias} vídeos/áudios · ${bytes(s?.disco?.livre)} livres`, 'alerta', '#/ajustes/dados')),
 
       energia,
 

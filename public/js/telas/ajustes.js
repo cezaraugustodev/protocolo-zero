@@ -2,11 +2,17 @@ import { h, icone, bytes, aviso, toast, confirmar, cabecalho } from '../ui.js';
 import { api } from '../api.js';
 import { cartaoSugestaoIA, painelAtualizar } from '../iniciador.js';
 
-// Abas: #/ajustes (Geral) e #/ajustes/atualizacoes (Atualizações).
-const ABAS = [['geral', 'Geral', 'ajustes', '#/ajustes'], ['atualizacoes', 'Atualizações', 'atualizar', '#/ajustes/atualizacoes']];
+// Abas: #/ajustes (IA), #/ajustes/aparencia, #/ajustes/dados e #/ajustes/atualizacoes.
+const ABAS = [
+  ['ia', 'Inteligência artificial', 'cerebro', '#/ajustes'],
+  ['aparencia', 'Aparência', 'lua', '#/ajustes/aparencia'],
+  ['dados', 'Dados e componentes', 'disco', '#/ajustes/dados'],
+  ['atualizacoes', 'Atualizações', 'atualizar', '#/ajustes/atualizacoes'],
+];
 
 export async function render(raiz, { estado, args = [] }) {
-  const aba = ['atualizacoes', 'atualizar'].includes(args[0]) ? 'atualizacoes' : 'geral';
+  const pedida = args[0] === 'atualizar' ? 'atualizacoes' : args[0];
+  const aba = ABAS.some(([id]) => id === pedida) ? pedida : 'ia';
   const pendentes = estado.servidor?.atualizacoes?.quantidade || 0;
   raiz.append(
     cabecalho('Sistema', 'Ajustes', 'Modelos de IA, aparência, atualizações e onde os dados ficam guardados.'),
@@ -35,10 +41,9 @@ export async function render(raiz, { estado, args = [] }) {
     })();
     const personalizado = h('input', { type: 'text', placeholder: 'ex.: llama3.2:3b', style: { maxWidth: '260px' } });
 
-    if (aba === 'atualizacoes') {
-      area.replaceChildren(cartaoAuto(au, s.plataforma));
-      return;
-    }
+    if (aba === 'atualizacoes') return area.replaceChildren(cartaoAuto(au, s.plataforma));
+    if (aba === 'aparencia') return area.replaceChildren(cartaoAparencia());
+    if (aba === 'dados') return area.replaceChildren(...cartoesDados());
     area.replaceChildren(
       // ---- IA ----
       h('div', { class: 'cartao pilha' },
@@ -93,16 +98,11 @@ export async function render(raiz, { estado, args = [] }) {
             const nome = personalizado.value.trim();
             if (!nome) return;
             await api.post('/api/ollama/modelo', { nome }).then(() => toast(`Baixando ${nome}… veja em Transferências.`)).catch((e) => toast(e.message, 'erro'));
-          } }, 'Baixar'))),
+          } }, 'Baixar'))));
 
-      // ---- busca ----
-      h('div', { class: 'cartao pilha' },
-        h('div', { class: 'linha' }, h('span', { class: 'icone-bolha musgo' }, icone('busca')), h('h3', { style: { margin: 0 } }, 'Índice de busca')),
-        h('p', { class: 'suave', style: { margin: 0 } },
-          `${s.indice.documentos} documentos · ${s.indice.trechos.toLocaleString('pt-BR')} trechos · ${s.indice.comVetores.toLocaleString('pt-BR')} com busca inteligente${s.indice.modelo ? ` (${s.indice.modelo})` : ''}`)),
-
-      // ---- aparência ----
-      h('div', { class: 'cartao pilha' },
+    // ---- aparência ----
+    function cartaoAparencia() {
+      return h('div', { class: 'cartao pilha' },
         h('div', { class: 'linha' }, h('span', { class: 'icone-bolha ceu' }, icone('lua')), h('h3', { style: { margin: 0 } }, 'Aparência')),
         h('div', { class: 'linha' },
           [['auto', 'Automático'], ['claro', 'Claro'], ['escuro', 'Escuro']].map(([v, n]) =>
@@ -113,15 +113,22 @@ export async function render(raiz, { estado, args = [] }) {
               if (v === 'auto') delete document.documentElement.dataset.tema;
               else document.documentElement.dataset.tema = v;
               desenhar();
-            } }, n)))),
+            } }, n))));
+    }
 
-      // ---- dados ----
-      h('div', { class: 'cartao pilha' },
+    // ---- dados, índice de busca e componentes ----
+    function cartoesDados() {
+      return [h('div', { class: 'cartao pilha' },
         h('div', { class: 'linha' }, h('span', { class: 'icone-bolha alerta' }, icone('disco')), h('h3', { style: { margin: 0 } }, 'Dados')),
         h('div', {}, h('small', {}, 'Pasta'), h('div', { class: 'mono' }, s.pastaDados)),
         h('div', {}, h('small', {}, 'Espaço livre'), h('div', {}, `${bytes(s.disco.livre)} de ${bytes(s.disco.total)}`)),
         h('div', { class: 'linha' }, h('button', { class: 'botao', onclick: () => api.post('/api/abrir-pasta') }, icone('pasta', 16), 'Abrir pasta')),
         aviso('info', 'Para levar tudo para outro disco ou pendrive, use "Copiar para outro disco" no menu. Para fazer backup, copie a pasta "dados".')),
+
+      h('div', { class: 'cartao pilha' },
+        h('div', { class: 'linha' }, h('span', { class: 'icone-bolha musgo' }, icone('busca')), h('h3', { style: { margin: 0 } }, 'Índice de busca')),
+        h('p', { class: 'suave', style: { margin: 0 } },
+          `${s.indice.documentos} documentos · ${s.indice.trechos.toLocaleString('pt-BR')} trechos · ${s.indice.comVetores.toLocaleString('pt-BR')} com busca inteligente${s.indice.modelo ? ` (${s.indice.modelo})` : ''}`)),
 
       // ---- ferramentas ----
       h('div', { class: 'cartao pilha' },
@@ -130,12 +137,8 @@ export async function render(raiz, { estado, args = [] }) {
           h('span', { class: `etiqueta ${s.ferramentas.kiwix ? 'musgo' : ''}` }, `Kiwix: ${s.ferramentas.kiwix ? 'instalado' : 'não instalado'}`),
           h('span', { class: `etiqueta ${s.ferramentas.pmtiles ? 'musgo' : ''}` }, `pmtiles: ${s.ferramentas.pmtiles ? 'instalado' : 'não instalado'}`),
           h('span', { class: `etiqueta ${s.ferramentas.vendor ? 'musgo' : ''}` }, `Leitor de PDF e mapas: ${s.ferramentas.vendor ? 'pronto' : 'não baixado'}`)),
-        h('small', {}, 'São baixados automaticamente quando necessários.')),
-      h('a', { class: 'cartao linha entre link-cartao', href: '#/ajustes/atualizacoes' },
-        h('div', { class: 'linha' }, h('span', { class: 'icone-bolha' }, icone('atualizar')),
-          h('div', {}, h('h3', { style: { margin: 0 } }, 'Atualizações'), h('small', { class: 'suave' }, 'Programa, enciclopédias, livros e IA; e a atualização automática ao ligar o computador.'))),
-        icone('direita', 18))
-    );
+        h('small', {}, 'São baixados automaticamente quando necessários.'))];
+    }
   }
 
   // ---- atualizações e inicialização (ao ligar o computador) ----
