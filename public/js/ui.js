@@ -1,5 +1,16 @@
 // Pequenos utilitários de interface: criação de elementos, ícones, formatação, avisos e janelas.
 
+// Filhos null/false significam "nada", como em h(). Sem isto, append/replaceChildren do navegador
+// escrevem o texto "null" na tela (ex.: um aviso que só aparece quando há erro).
+for (const P of [Element.prototype, DocumentFragment.prototype]) {
+  for (const m of ['append', 'prepend', 'replaceChildren']) {
+    const original = P[m];
+    P[m] = function (...filhos) {
+      return original.apply(this, filhos.filter((f) => f != null && f !== false));
+    };
+  }
+}
+
 /** h('div', { class: 'x', onclick }, filhos...) */
 export function h(tag, props = {}, ...filhos) {
   const el = document.createElement(tag);
