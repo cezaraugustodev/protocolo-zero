@@ -35,11 +35,29 @@ async function buscarNaRede(z, x, y, sinal) {
   return Buffer.from(await r.arrayBuffer());
 }
 
+// O mesmo bloco pode ser gravado ao mesmo tempo pelo mapa aberto e pelo "Salvar satélite da área":
+// cada gravação usa um arquivo temporário próprio, e se outra já guardou o bloco, está tudo certo.
+let seqTmp = 0;
 async function gravar(z, x, y, buf) {
   const arq = arquivoTile(z, x, y);
+  const tmp = `${arq}.${process.pid}-${++seqTmp}.tmp`;
   await fsp.mkdir(path.dirname(arq), { recursive: true });
-  await fsp.writeFile(`${arq}.tmp`, buf);
-  await fsp.rename(`${arq}.tmp`, arq);
+  await fsp.writeFile(tmp, buf);
+  for (let t = 0; ; t++) {
+    try {
+      await fsp.rename(tmp, arq);
+      return;
+    } catch (e) {
+      // No Windows o antivírus ou o próprio mapa (lendo o bloco) pode prender o arquivo por um instante.
+      if (['EPERM', 'EBUSY', 'EACCES'].includes(e.code) && t < 5) {
+        await new Promise((r) => setTimeout(r, 50 * 2 ** t));
+        continue;
+      }
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+      if (await existe(arq)) return; // outra gravação guardou o mesmo bloco
+      throw e;
+    }
+  }
 }
 
 /** Um bloco: do disco, ou da internet (e guarda). null se não houver. */
@@ -105,8 +123,8 @@ export async function baixarArea({ bbox, maxzoom }, tarefa, sinal) {
       if (!(await existe(arquivoTile(z, x, y)))) {
         let buf = null;
         for (let t = 0; t < 3 && !buf; t++) buf = await buscarNaRede(z, x, y, sinal).catch(() => null);
-        if (buf) await gravar(z, x, y, buf);
-        else falhas++;
+        // Um bloco que não pôde ser gravado conta como falha, sem parar o download da área inteira.
+        if (!buf || !(await gravar(z, x, y, buf).then(() => true, () => false))) falhas++;
       }
       tarefa.baixado++;
       tarefa.mensagem = `${tarefa.baixado.toLocaleString('pt-BR')} de ${tiles.toLocaleString('pt-BR')} blocos`;
