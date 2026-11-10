@@ -30,6 +30,7 @@ import { verificarAtualizacoes, resumoAtualizacoes, atualizarProtocoloZero, rela
 import * as auto from './autoatualizar.js';
 import { atualizarCatalogo, escolherNovos, idsNovidades, fonteCatalogo } from './novidades.js';
 import { emergenciaPorId } from '../public/js/emergencias-dados.js';
+import { montarContexto, textoContexto, OPCOES_PADRAO as CONTEXTO_PADRAO, ESTADOS as ESTADOS_BR } from './contexto.js';
 import { destinos as destinosCopia, tamanhos as tamanhosCopia, copiar as copiarPZ, abrirPasta, criarAtalho } from './copiar.js';
 
 const PORTA_PADRAO = Number(process.env.PROTOCOLO_ZERO_PORTA || 4321);
@@ -267,17 +268,13 @@ function baixarModeloTarefa(nome) {
 }
 
 // ---------------- assistente ----------------
-// Emergência marcada pelo usuário: a IA prioriza segurança imediata, mas responde sobre qualquer assunto.
-async function textoEmergencia() {
-  const { ativas = [] } = await lerJSON(path.join(DADOS, 'emergencia.json'), { ativas: [] });
-  const nomes = ativas.map((id) => emergenciaPorId(id)?.nome).filter(Boolean);
-  if (!nomes.length) return '';
-  return `
-
-SITUAÇÃO ATUAL DO USUÁRIO: ele marcou que está em emergência: ${nomes.join(', ')}.
-Quando a pergunta tiver relação com isso, comece pelo que fazer AGORA para ficar seguro, em passos curtos, e lembre dos números (SAMU 192, Bombeiros 193, Defesa Civil 199) quando couber.
-Siga as orientações oficiais (Defesa Civil, Ministério da Saúde) das FONTES. Se a pergunta for sobre outro assunto, responda normalmente.`;
-}
+// Situação do usuário (emergência marcada, família, estoque, onde mora, o que está lendo): server/contexto.js.
+const contextoDoUsuario = (pergunta) => montarContexto({
+  config, pergunta, arqEstoque: ARQ_ESTOQUE, arqEmergencia: path.join(DADOS, 'emergencia.json'), obterItem: (id) => bib.obter(id),
+});
+// Órgãos de Defesa Civil (país, estados e cidades): em emergência, suas orientações sobem na busca.
+const DEFESA_CIVIL = /defesa civil|prote[çc][ãa]o civil|\bsedec\b|\bcedec\b|\bcomdec\b|\bcompdec\b|\bcenad\b|cemaden|corpo de bombeiros/i;
+const semAcento = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const SISTEMA = `Você é o assistente do Protocolo Zero, uma biblioteca offline de sobrevivência, saúde e autossuficiência.
 Responda SEMPRE em português do Brasil, de forma clara, prática e em passos quando fizer sentido.
 Use as FONTES fornecidas como base principal. Cite-as no texto com [1], [2] etc. conforme a numeração.
@@ -321,12 +318,27 @@ const porConfianca = (lista) => lista.map((f, i) => ({ f, i }))
   .sort((a, b) => ORDEM_CONFIANCA[a.f.confianca] - ORDEM_CONFIANCA[b.f.confianca] || a.i - b.i)
   .map(({ f }) => f);
 
-async function buscarPorConfianca(pergunta) {
-  const [achados, cat] = await Promise.all([
-    buscar(pergunta, { modeloEmbed: config.modeloEmbed, limite: 12 }),
-    carregarCatalogo(),
-  ]);
+async function buscarPorConfianca(pergunta, ctx = null) {
+  const cat = await carregarCatalogo();
   const porId = new Map(cat.itens.map((i) => [i.id, i]));
+  // Contexto do usuário: Defesa Civil em emergência, órgãos do estado/cidade dele e o documento aberto sobem.
+  let bonus = null;
+  if (ctx) {
+    const fontes = new Map([...(await bib.listar()).map((i) => [i.id, i.fonte]), ...cat.itens.map((i) => [i.id, i.fonte])]);
+    const lugares = [ctx.local?.cidade, ctx.local?.nomeUf, ctx.local?.uf && `(${ctx.local.uf})`].filter(Boolean).map(semAcento);
+    const memo = new Map();
+    bonus = (docId) => {
+      if (memo.has(docId)) return memo.get(docId);
+      const fonte = fontes.get(docId) || '';
+      let m = 1;
+      if (ctx.emergencia && DEFESA_CIVIL.test(fonte)) m *= 1.35;
+      if (lugares.length && lugares.some((l) => semAcento(fonte).includes(l))) m *= 1.15;
+      if (ctx.docLendo === docId) m *= 1.25;
+      memo.set(docId, m);
+      return m;
+    };
+  }
+  const achados = await buscar(pergunta, { modeloEmbed: config.modeloEmbed, limite: 12, extras: ctx?.termos || [], consulta: ctx?.consulta || '', bonus });
   for (const t of achados) {
     const it = porId.get(t.docId) || (await bib.obter(t.docId));
     t.confianca = confiancaDe(it || { id: t.docId });
@@ -398,6 +410,12 @@ async function rotaChat(req, res) {
 
   try {
     enviar({ tipo: 'modelo', modelo: modeloChat });
+    // O que o assistente considera desta vez (a tela mostra junto da resposta).
+    const ctx = await contextoDoUsuario(pergunta).catch((e) => {
+      registrarErro('assistente/contexto', e);
+      return { itens: [], todos: [], termos: [], consulta: '', docLendo: null, local: null, emergencia: false, marcadas: [] };
+    });
+    if (ctx.itens.length) enviar({ tipo: 'contexto', itens: ctx.itens.map((i) => ({ id: i.id, rotulo: i.rotulo, texto: i.texto })) });
     // A consulta só acontece com o que já está pronto (índice e Kiwix ativos); o resto é ignorado sem erro.
     const st = await estatisticasIndice().catch(() => ({ trechos: 0 }));
     const consultarBib = usarBiblioteca && st.trechos > 0;
@@ -407,7 +425,7 @@ async function rotaChat(req, res) {
     if (consultarBib || consultarWiki) {
       enviar({ tipo: 'status', texto: 'Consultando os arquivos do Protocolo Zero…' });
       [trechos, artigos] = await Promise.all([
-        consultarBib ? buscarPorConfianca(pergunta).catch(() => []) : [],
+        consultarBib ? buscarPorConfianca(pergunta, ctx).catch((e) => (console.error('busca:', e), [])) : [],
         consultarWiki ? buscarNosZims(pergunta, { limite: 3 }).catch(() => []) : [],
       ]);
     }
@@ -436,7 +454,7 @@ async function rotaChat(req, res) {
     // Pensamento profundo: nativo nos modelos que raciocinam (qwen3…); nos outros, pedimos a análise
     // passo a passo no próprio texto (funciona, mas com menos qualidade).
     const nativo = suportaRaciocinio(modeloChat);
-    const sistema = (livre ? SISTEMA_LIVRE : SISTEMA) + (pensar && !nativo ? SISTEMA_PENSAR : '') + (await textoEmergencia());
+    const sistema = (livre ? SISTEMA_LIVRE : SISTEMA) + (pensar && !nativo ? SISTEMA_PENSAR : '') + textoContexto(ctx);
     const mensagens = [
       { role: 'system', content: sistema },
       ...historico.slice(-6).map((m) => ({ role: m.papel === 'usuario' ? 'user' : 'assistant', content: String(m.texto).slice(0, 4000) })),
@@ -571,6 +589,26 @@ rota('PUT', /^\/api\/emergencia$/, async (req, res) => {
   const desde = ativas.length ? (antes.ativas?.length ? antes.desde : Date.now()) : null;
   await gravarJSON(ARQ_EMERGENCIA, { ativas, desde });
   json(res, 200, { ativas, desde });
+});
+
+// Contexto do assistente: o que ele considera em cada resposta (server/contexto.js). Tudo fica neste computador.
+rota('GET', /^\/api\/contexto$/, async (req, res) => {
+  const ctx = await contextoDoUsuario('');
+  json(res, 200, { opcoes: { ...CONTEXTO_PADRAO, ...(config.contexto || {}) }, local: config.local || {}, estados: ESTADOS_BR, todos: ctx.todos });
+});
+rota('PUT', /^\/api\/contexto$/, async (req, res) => {
+  const d = await lerCorpo(req, 1e4);
+  const novo = {};
+  if (d?.opcoes && typeof d.opcoes === 'object') {
+    novo.contexto = Object.fromEntries(Object.keys(CONTEXTO_PADRAO).map((k) => [k, d.opcoes[k] ?? config.contexto?.[k] ?? CONTEXTO_PADRAO[k]]).map(([k, v]) => [k, !!v]));
+  }
+  if (d?.local && typeof d.local === 'object') {
+    const uf = ESTADOS_BR.some(([sigla]) => sigla === d.local.uf) ? d.local.uf : '';
+    novo.local = { uf, cidade: String(d.local.cidade || '').replace(/[<>]/g, '').trim().slice(0, 80) };
+  }
+  await salvarConfig(novo);
+  const ctx = await contextoDoUsuario('');
+  json(res, 200, { opcoes: { ...CONTEXTO_PADRAO, ...(config.contexto || {}) }, local: config.local || {}, estados: ESTADOS_BR, todos: ctx.todos });
 });
 
 rota('GET', /^\/api\/ping$/, async (req, res) => json(res, 200, { app: 'protocolo-zero', pid: process.pid, dados: DADOS }));

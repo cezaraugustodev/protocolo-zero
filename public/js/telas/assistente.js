@@ -193,6 +193,50 @@ export async function render(raiz, { estado }) {
       h('div', { class: 'linha', style: { gap: '6px' } }, botaoParar, botaoEnviar)),
     seletorArquivo);
 
+  // ---------- o que o assistente considera (situação do usuário; tudo fica neste computador) ----------
+  const caixaContexto = h('details', { class: 'ia-contexto' });
+  let ctxInfo = null;
+  const DICA_CONTEXTO = {
+    emergencia: h('span', {}, 'Nenhuma marcada. Marque em ', h('a', { href: '#/emergencia' }, 'Emergência agora'), '.'),
+    familia: h('span', {}, 'Cadastre as pessoas em ', h('a', { href: '#/nutricao' }, 'Saúde e nutrição'), ' ou no ', h('a', { href: '#/estoque' }, 'Estoque'), '.'),
+    estoque: h('span', {}, 'Confira o ', h('a', { href: '#/estoque' }, 'Estoque de emergência'), ' para o assistente saber quanto ele dura.'),
+    local: 'Informe abaixo o estado e a cidade.',
+    lendo: 'Nenhum documento aberto nos últimos 3 dias.',
+  };
+  const carregarContexto = () => api.get('/api/contexto').then((r) => { ctxInfo = r; desenharContexto(); }).catch(() => {});
+  async function salvarContexto(mudanca) {
+    try {
+      ctxInfo = await api.put('/api/contexto', mudanca);
+    } catch (e) {
+      toast(e.message, 'erro');
+    }
+    desenharContexto();
+  }
+  function desenharContexto() {
+    if (!ctxInfo) return caixaContexto.replaceChildren();
+    const aberto = caixaContexto.open;
+    const ligados = ctxInfo.todos.filter((t) => ctxInfo.opcoes[t.id] && t.texto);
+    const uf = h('select', { 'aria-label': 'Estado' },
+      h('option', { value: '' }, 'Estado…'),
+      ctxInfo.estados.map(([sigla, nome]) => h('option', { value: sigla, selected: ctxInfo.local?.uf === sigla }, nome)));
+    const cidade = h('input', { type: 'text', placeholder: 'Cidade', value: ctxInfo.local?.cidade || '', maxlength: 80, 'aria-label': 'Cidade' });
+    caixaContexto.replaceChildren(
+      h('summary', {}, icone('info', 14),
+        h('span', {}, ligados.length ? `Considerando: ${ligados.map((t) => t.rotulo.toLowerCase()).join(', ')}` : 'O assistente não está considerando a sua situação'),
+        h('small', { class: 'suave' }, ' · ajustar')),
+      h('div', { class: 'ia-contexto-corpo' },
+        h('p', { class: 'suave' }, 'Para responder melhor, o assistente leva em conta a sua situação e procura primeiro nas orientações da Defesa Civil e dos órgãos oficiais sobre o assunto. Nada sai deste computador.'),
+        ctxInfo.todos.map((t) =>
+          h('label', { class: 'ia-contexto-item' },
+            h('input', { type: 'checkbox', checked: !!ctxInfo.opcoes[t.id], onchange: (e) => salvarContexto({ opcoes: { [t.id]: e.target.checked } }) }),
+            h('div', {}, h('b', {}, t.rotulo), h('small', { class: 'suave' }, t.texto || DICA_CONTEXTO[t.id])))),
+        h('form', { class: 'ia-contexto-local', onsubmit: (e) => { e.preventDefault(); salvarContexto({ local: { uf: uf.value, cidade: cidade.value } }).then(() => toast('Local salvo.')); } },
+          uf, cidade, h('button', { class: 'botao pequeno', type: 'submit' }, 'Salvar local'))));
+    caixaContexto.open = aberto;
+  }
+  carregarContexto();
+  caixaContexto.addEventListener('toggle', () => caixaContexto.open && carregarContexto());
+
   // Sugestão de modelo melhor para este PC (some se já estiver usando o ideal).
   const sugestaoIA = h('div');
   if (s?.ollama?.online) carregarPerfis().then(() => desenharModos());
@@ -214,6 +258,7 @@ export async function render(raiz, { estado }) {
         h('footer', { class: 'ia-rodape' },
           problema,
           sugestaoIA,
+          caixaContexto,
           compositor,
           h('small', { class: 'ia-nota' }, 'A IA pode cometer erros. Em saúde e segurança, prevalecem as fontes oficiais da ', h('a', { href: '#/biblioteca/saude' }, 'Biblioteca'), '. Em emergência, procure atendimento (SAMU 192).')))));
 
@@ -606,7 +651,8 @@ export async function render(raiz, { estado }) {
     });
     const rodape = !emAndamento && (m.texto || m.erro)
       ? h('div', { class: 'ia-msg-rodape' },
-          h('span', { title: m.modelo ? `Motor: ${motor(m.modelo)}` : '' }, ['Protocolo Zero', m.modelo && `IA ${classe(m.modelo)}`, m.modoPensar ? 'pensamento profundo' : null, m.livre ? 'sem consulta' : m.fontes?.length ? 'com fontes' : null].filter(Boolean).join(' • ')),
+          h('span', { title: m.modelo ? `Motor: ${motor(m.modelo)}` : '' }, ['Protocolo Zero', m.modelo && `IA ${classe(m.modelo)}`, m.modoPensar ? 'pensamento profundo' : null, m.livre ? 'sem consulta' : m.fontes?.length ? 'com fontes' : null].filter(Boolean).join(' • '),
+            m.contexto?.length ? h('span', { class: 'ia-considerou', title: m.contexto.map((c) => `${c.rotulo}: ${c.texto}`).join('\n') }, ' • considerou sua situação') : null),
           m.texto ? botaoCopiar : null)
       : null;
 
@@ -686,6 +732,7 @@ export async function render(raiz, { estado }) {
         if (ev.tipo === 'status') resposta.status = ev.texto;
         if (ev.tipo === 'aviso') { resposta.aviso = ev.texto; resposta.livre = true; }
         if (ev.tipo === 'fontes') resposta.fontes = ev.fontes;
+        if (ev.tipo === 'contexto') resposta.contexto = ev.itens;
         if (ev.tipo === 'pensamento') resposta.pensamento = (resposta.pensamento || '') + ev.texto;
         if (ev.tipo === 'fim') { resposta.pensouSeg = ev.pensouSeg; resposta.modoPensar = ev.pensamento; resposta.cortado = ev.raciocinioCortado; resposta.redator = ev.redator; }
         if (ev.tipo === 'texto') resposta.texto += ev.texto;

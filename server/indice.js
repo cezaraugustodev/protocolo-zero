@@ -182,24 +182,32 @@ export async function documentosIndexados() {
 }
 
 /** Busca híbrida: semântica (se houver vetores do mesmo modelo) + palavras-chave. */
-export async function buscar(pergunta, { modeloEmbed, limite = 6 } = {}) {
+/**
+ * Busca nos trechos (palavras + significado). Opções do contexto do usuário (server/contexto.js):
+ *  extras   — palavras da situação (ex.: termos da emergência), valem metade das da pergunta;
+ *  consulta — frase da situação somada à pergunta na busca por significado;
+ *  bonus    — (docId) => multiplicador da nota (ex.: Defesa Civil em emergência, documento aberto).
+ */
+export async function buscar(pergunta, { modeloEmbed, limite = 6, extras = [], consulta = '', bonus = null } = {}) {
   await carregar();
   if (!trechos.length) return [];
   const termos = [...new Set(tokenizar(pergunta))];
+  const termosExtras = [...new Set(tokenizar(extras.join(' ')))].filter((t) => !termos.includes(t));
   const N = trechos.length;
   const idf = new Map(
-    termos.map((t) => {
+    [...termos, ...termosExtras].map((t) => {
       let df = 0;
       for (const tr of trechos) if (tr.termos.has(t)) df++;
       return [t, df ? Math.log(1 + N / df) : 0];
     })
   );
-  const maxKw = termos.reduce((s, t) => s + idf.get(t), 0) || 1;
+  const PESO_EXTRA = 0.5;
+  const maxKw = (termos.reduce((s, t) => s + idf.get(t), 0) + PESO_EXTRA * termosExtras.reduce((s, t) => s + idf.get(t), 0)) || 1;
 
   let qv = null;
   if (modeloEmbed && meta.modelo === modeloEmbed && vetores.some(Boolean)) {
     try {
-      const [e] = await gerarEmbeddings(modeloEmbed, [`task: search result | query: ${pergunta}`]);
+      const [e] = await gerarEmbeddings(modeloEmbed, [`task: search result | query: ${consulta ? `${consulta}. ` : ''}${pergunta}`]);
       qv = prepararVetor(e);
     } catch {}
   }
@@ -209,11 +217,15 @@ export async function buscar(pergunta, { modeloEmbed, limite = 6 } = {}) {
     const t = trechos[i];
     let kw = 0;
     for (const termo of termos) if (t.termos.has(termo)) kw += idf.get(termo);
+    for (const termo of termosExtras) if (t.termos.has(termo)) kw += PESO_EXTRA * idf.get(termo);
     kw /= maxKw;
     let sem = 0;
     const v = vetores[i];
     if (qv && v) for (let j = 0; j < DIM; j++) sem += v[j] * qv[j];
-    const nota = qv && v ? sem * 0.7 + kw * 0.3 : kw * 0.8;
+    // Trecho sem vetor (busca inteligente ainda sendo preparada) concorre só pelas palavras; com vetor,
+    // vale a melhor das duas notas, para um documento novo não perder só por ainda não ter vetor.
+    let nota = qv && v ? Math.max(sem * 0.7 + kw * 0.3, kw * 0.8) : kw * 0.8;
+    if (bonus && nota > 0) nota *= bonus(t.docId) || 1;
     if (nota > 0.05) pontos.push([nota, i]);
   }
   pontos.sort((a, b) => b[0] - a[0]);

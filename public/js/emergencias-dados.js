@@ -59,7 +59,7 @@ export const EMERGENCIAS = [
       'Não volte para a área até a Defesa Civil liberar: novos deslizamentos são comuns.',
       'Pessoa soterrada: chame os Bombeiros (193). Não tente cavar sozinho se o terreno estiver instável.',
     ],
-    termos: ['deslizamento', 'encosta', 'area de risco', 'soterramento', 'defesa civil'],
+    termos: ['deslizamento', 'encosta', 'barranco', 'morro', 'rachadura', 'rachaduras', 'area de risco', 'soterramento', 'defesa civil'],
     perguntas: ['Quais são os sinais de que um morro vai deslizar?', 'Como ajudar uma pessoa resgatada de soterramento até o socorro chegar?'],
   },
   {

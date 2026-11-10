@@ -836,6 +836,20 @@ button.pilula-status.destaque-reiniciar:hover { filter: brightness(1.08); }
 .aba.ativa { color: var(--brasa); border-bottom-color: var(--brasa); }
 .aba-contador { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--brasa); color: #fff; font-size: 11px; display: inline-grid; place-items: center; }
 a.link-cartao { color: inherit; text-decoration: none; }
+/* Assistente: o que ele considera (situação do usuário) */
+.ia-contexto { margin: 0 0 8px; font-size: 13px; }
+.ia-contexto > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--suave); list-style: none; padding: 4px 2px; }
+.ia-contexto > summary::-webkit-details-marker { display: none; }
+.ia-contexto > summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ia-contexto[open] > summary { color: var(--tinta); }
+.ia-contexto-corpo { display: grid; gap: 8px; padding: 10px 12px; margin-top: 4px; border: 1px solid var(--linha); border-radius: 12px; background: var(--superficie-2); max-height: 46vh; overflow: auto; }
+.ia-contexto-corpo p { margin: 0; }
+.ia-contexto-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; cursor: pointer; }
+.ia-contexto-item input { margin-top: 3px; accent-color: var(--brasa); }
+.ia-contexto-item div { display: grid; gap: 1px; }
+.ia-contexto-local { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ia-contexto-local select, .ia-contexto-local input { width: auto; flex: 1 1 140px; min-width: 0; }
+.ia-considerou { cursor: help; }
 a.link-cartao:hover { border-color: var(--linha-forte); text-decoration: none; }
 button.pilula-status.botao-sair { width: 100%; padding: 4px 0; border: 0; background: none; color: var(--suave); font: inherit; text-align: left; cursor: pointer; }
 button.pilula-status.botao-sair:hover { color: var(--perigo); }
