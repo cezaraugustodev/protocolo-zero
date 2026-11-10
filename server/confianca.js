@@ -1,5 +1,6 @@
 // Nível de confiança de cada fonte da Biblioteca. O assistente consulta tudo, mas nesta ordem:
-// 1. oficial      — governo e órgãos oficiais (Ministério da Saúde, Anvisa, Fiocruz, Embrapa, OMS, Cruz Vermelha, FEMA…)
+// 1. oficial      — governo e órgãos oficiais (Ministério da Saúde, Anvisa, Fiocruz, Embrapa, Defesa Civil nacional,
+//                    estaduais e municipais, OMS, Cruz Vermelha, FEMA…)
 // 2. cientifica   — universidades, institutos federais e editoras científicas/técnicas revisadas (UFV, USP, IFRN, Hesperian…)
 // 3. comunidade   — não oficiais: Wikipédia, TED, fóruns, coleções da comunidade e arquivos do próprio usuário
 // 4. nao-verificada — Internet Archive (qualquer pessoa envia; sem revisão)
@@ -15,7 +16,7 @@ export const ROTULO = {
   'nao-verificada': 'FONTE NÃO VERIFICADA — Internet Archive',
 };
 
-const OFICIAL = /minist[ée]rio|anvisa|fiocruz|funasa|secretaria (de|da)|defesa civil|embrapa|epamig|cresesb|cepel|ex[ée]rcito|for[çc]as armadas|army publishing|documentos oficiais|fema\b|departamento de agricultura|usda|organiza[çc][ãa]o mundial|\boms\b|ifrc|cruz vermelha|\bcdc\b|governo|dept\. de sa[úu]de|seed-pr|ibge|inpe|corpo de bombeiros|pol[íi]cia (militar|civil|federal|rodovi[áa]ria)|\bsamu\b|sanepar|sabesp|companhia de saneamento/i;
+const OFICIAL = /minist[ée]rio|anvisa|fiocruz|funasa|secretaria (de|da)|defesa civil|prote[çc][ãa]o civil|\bsedec\b|\bcedec\b|\bcomdec\b|\bcompdec\b|\bcenad\b|cemaden|embrapa|epamig|cresesb|cepel|ex[ée]rcito|for[çc]as armadas|army publishing|documentos oficiais|fema\b|departamento de agricultura|usda|organiza[çc][ãa]o mundial|\boms\b|ifrc|cruz vermelha|\bcdc\b|governo|dept\. de sa[úu]de|seed-pr|ibge|inpe|corpo de bombeiros|pol[íi]cia (militar|civil|federal|rodovi[áa]ria)|\bsamu\b|sanepar|sabesp|companhia de saneamento/i;
 const CIENTIFICA = /universidade|\buf[a-z]{1,4}\b|\busp\b|unifal|unifesp|unicamp|unesp|instituto federal|e-tec|obmep|impa|gref|hesperian|ceatox|editora universit/i;
 
 /** Classifica um item do catálogo ou da Biblioteca. */

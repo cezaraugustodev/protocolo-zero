@@ -1,5 +1,5 @@
 {
-  "versao": 6,
+  "versao": 7,
   "fonteAtualizacao": "https://raw.githubusercontent.com/cezaraugustodev/protocolo-zero/main/catalogo/catalogo.json",
   "categorias": [
     {
@@ -4099,6 +4099,123 @@
       "url": "https://rd.uffs.edu.br/bitstream/prefix/9377/1/CARTILHA%20-%20BIOCONSTRUC%cc%a7A%cc%83O%20NO%20ENSINO%20DAS%20CIE%cc%82NCIAS.pdf",
       "tamanho": 35769594,
       "confianca": "cientifica"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-sedec-chuvas-intensas",
+      "titulo": "Chuvas intensas: saiba como agir",
+      "fonte": "Defesa Civil Nacional (Secretaria Nacional de Proteção e Defesa Civil)",
+      "descricao": "O que fazer antes, durante e depois de chuvas fortes: proteger a casa, documentos e a família, risco de enchente e deslizamento.",
+      "url": "https://www.gov.br/mdr/pt-br/assuntos/protecao-e-defesa-civil/informacoes-uteis/centro-nacional-de-gerenciamento-de-riscos-e-desastres-cenad/chuvasintensas.pdf",
+      "tamanho": 81863,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dcmg-como-agir-inundacoes",
+      "titulo": "Como agir em inundações",
+      "fonte": "Defesa Civil de Minas Gerais",
+      "descricao": "Tipos de enchente, sinais de alerta e o que fazer antes, durante e depois da água subir.",
+      "url": "https://www.mg.gov.br/system/files/media/documento_detalhado/2025-03/%28Microsoft%20Word%20-%20Como%20agir%20em%20Inunda_347_365es.doc%29.pdf",
+      "tamanho": 108498,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dcmg-como-agir-deslizamentos",
+      "titulo": "Como agir em deslizamentos",
+      "fonte": "Defesa Civil de Minas Gerais",
+      "descricao": "Sinais de que o terreno pode deslizar, quando sair de casa e o que fazer depois.",
+      "url": "https://www.mg.gov.br/system/files/media/documento_detalhado/2025-03/Microsoft%20Word%20-%20Como%20agir%20em%20Deslizamentos.doc.pdf",
+      "tamanho": 80348,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dcmg-como-agir-vendavais",
+      "titulo": "Como agir em vendavais",
+      "fonte": "Defesa Civil de Minas Gerais",
+      "descricao": "Ventos fortes: como se proteger em casa e na rua, e cuidados com fios e árvores caídas.",
+      "url": "https://www.mg.gov.br/system/files/media/documento_detalhado/2025-03/Microsoft%20Word%20-%20Como%20agir%20em%20Vendavais.doc.pdf",
+      "tamanho": 67721,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dcmg-como-agir-granizo",
+      "titulo": "Como agir em chuvas de granizo",
+      "fonte": "Defesa Civil de Minas Gerais",
+      "descricao": "Como se abrigar durante o granizo e o que fazer com telhados e casas danificadas.",
+      "url": "https://www.mg.gov.br/system/files/media/documento_detalhado/2025-03/Microsoft%20Word%20-%20Como%20agir%20em%20Granizo.doc.pdf",
+      "tamanho": 86518,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dc-joinville-chuvas",
+      "titulo": "Chuvas intensas: como agir",
+      "fonte": "Defesa Civil de Joinville (SC)",
+      "descricao": "Lista simples do que fazer antes, durante e depois de chuvas fortes, com rotas de fuga e números de emergência.",
+      "url": "https://www.joinville.sc.gov.br/wp-content/uploads/2025/04/Cartilha-Chuvas-Intensas-como-agir.pdf",
+      "tamanho": 690783,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dc-joinville-deslizamentos",
+      "titulo": "Deslizamentos: como agir",
+      "fonte": "Defesa Civil de Joinville (SC)",
+      "descricao": "Como saber se a casa está em área de risco, sinais de deslizamento e o que fazer para sair com segurança.",
+      "url": "https://www.joinville.sc.gov.br/wp-content/uploads/2025/04/Cartilha-Deslizamentos-como-agir.pdf",
+      "tamanho": 693207,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dc-sao-bento-sapucai",
+      "titulo": "Cartilha da Defesa Civil para a população",
+      "fonte": "Defesa Civil de São Bento do Sapucaí (SP)",
+      "descricao": "O que é a Defesa Civil, como ela ajuda, riscos mais comuns e como a comunidade pode se preparar.",
+      "url": "https://saobentodosapucai.sp.gov.br/wp-content/uploads/2021/09/16102017_DefesaCivil_2017-ePub_RRD.pdf",
+      "tamanho": 1415404,
+      "nivel": "essencial",
+      "confianca": "oficial"
+    },
+    {
+      "tipo": "pdf",
+      "categoria": "sobrevivencia",
+      "materia": "Defesa Civil: como agir em desastres",
+      "id": "pdf-dc-rio-prepare-escolas",
+      "titulo": "PREPARE: prevenção e preparação para desastres nas escolas",
+      "fonte": "Defesa Civil da cidade do Rio de Janeiro e Universidade Veiga de Almeida",
+      "descricao": "Cartilha para escolas: riscos de chuva, como se preparar e o que fazer com alunos em emergências.",
+      "url": "https://defesacivil.prefeitura.rio/wp-content/uploads/sites/35/2025/04/PREPARE_Defesa-Civil-2025_final.pdf",
+      "tamanho": 2660799,
+      "nivel": "basico",
+      "confianca": "oficial"
     }
   ],
   "estados": {
@@ -4350,7 +4467,7 @@
     {
       "id": "essencial",
       "nome": "Essencial",
-      "descricao": "O mínimo indispensável: manuais de saúde, ervas, água, energia, sobrevivência e horta (com plantas tóxicas), Wikipédia resumida e mapa geral do Brasil.",
+      "descricao": "O mínimo indispensável: manuais de saúde, ervas, água, energia, sobrevivência, como agir em desastres (Defesa Civil) e horta (com plantas tóxicas), Wikipédia resumida e mapa geral do Brasil.",
       "itens": [
         "pdf-fiocruz-primeiros-socorros",
         "pdf-ms-suporte-basico-vida",
@@ -4451,7 +4568,15 @@
         "pdf-embrapa-compostagem",
         "pdf-embrapa-biodigestor",
         "pdf-embrapa-fossa-biodigestora",
-        "pdf-ufv-fogao-lenha-sem-fumaca"
+        "pdf-ufv-fogao-lenha-sem-fumaca",
+        "pdf-sedec-chuvas-intensas",
+        "pdf-dcmg-como-agir-inundacoes",
+        "pdf-dcmg-como-agir-deslizamentos",
+        "pdf-dcmg-como-agir-vendavais",
+        "pdf-dcmg-como-agir-granizo",
+        "pdf-dc-joinville-chuvas",
+        "pdf-dc-joinville-deslizamentos",
+        "pdf-dc-sao-bento-sapucai"
       ]
     },
     {
