@@ -65,6 +65,7 @@ export const FICHAS = [
     titulo: 'Água segura para beber', icone: 'gota', cor: '#2f7fa8',
     passos: [
       'Se a água estiver turva, deixe decantar e coe em pano limpo antes de tratar.',
+      'Água muito barrenta: o pó da semente de moringa (árvore comum no Nordeste; fotos e passo a passo na Biblioteca) faz a sujeira descer. Ela só clareia, não mata germes: depois ferva ou use hipoclorito.',
       'Ferva por pelo menos 1 minuto (fervura forte) e deixe esfriar tampada.',
       'Sem fogo: 2 gotas de hipoclorito de sódio 2,5% por litro. Misture e espere 30 minutos.',
       'Água sanitária só se o rótulo indicar uso em água para consumo (sem perfume ou alvejante extra).',

@@ -208,7 +208,7 @@ export const EMERGENCIAS = [
       'Água guardada da torneira vale por até 6 meses; troque depois disso.',
       'Diarreia com fraqueza, principalmente em crianças e idosos, é sinal de desidratação: dê soro e procure atendimento.',
     ],
-    termos: ['agua', 'seca', 'hipoclorito', 'filtro', 'cisterna', 'chuva', 'desinfeccao', 'potavel', 'poco'],
+    termos: ['agua', 'seca', 'hipoclorito', 'filtro', 'cisterna', 'chuva', 'desinfeccao', 'potavel', 'poco', 'moringa', 'barrenta'],
     perguntas: ['Como tratar água para beber sem ferver?', 'Como construir uma cisterna para captar água da chuva?', 'Quanta água guardar por pessoa?'],
   },
   {

@@ -1,5 +1,5 @@
 {
-  "versao": 7,
+  "versao": 8,
   "fonteAtualizacao": "https://raw.githubusercontent.com/cezaraugustodev/protocolo-zero/main/catalogo/catalogo.json",
   "categorias": [
     {
@@ -397,6 +397,30 @@
       "descricao": "Métodos simples de tratamento: fervura, filtragem e cloração.",
       "url": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/160785/1/INT85.pdf",
       "tamanho": 259315,
+      "confianca": "oficial"
+    },
+    {
+      "id": "pdf-univasf-moringa-agua",
+      "tipo": "pdf",
+      "categoria": "agua",
+      "titulo": "Tratamento simplificado de água em casa com semente de moringa",
+      "fonte": "UNIVASF — PET Saneamento Ambiental (Universidade Federal do Vale do São Francisco)",
+      "descricao": "Cartilha ilustrada, passo a passo: preparar o pó da semente de moringa, clarear a água barrenta, filtrar e desinfetar. A moringa só clareia: depois sempre desinfete. Atenção: a cartilha dá a dose para hipoclorito 10%; para o de 2,5% do posto de saúde, use a dose das cartilhas oficiais.",
+      "url": "https://cdnc.heyzine.com/flip-book/pdf/bdd7e17f0c74b1b802142107397987068ecea49a.pdf",
+      "tamanho": 3025329,
+      "nivel": "essencial",
+      "confianca": "cientifica"
+    },
+    {
+      "id": "pdf-emdagro-moringa",
+      "tipo": "pdf",
+      "categoria": "agua",
+      "titulo": "Moringa oleífera: como reconhecer, plantar e usar",
+      "fonte": "EMDAGRO — Empresa de Desenvolvimento Agropecuário de Sergipe (Governo de Sergipe)",
+      "descricao": "Folheto com fotos da árvore, das folhas, das vagens e das sementes de moringa, como plantar e usar na comida e para clarear a água.",
+      "url": "https://www.emdagro.se.gov.br/wp-content/uploads/2018/11/moringa.pdf",
+      "tamanho": 363792,
+      "nivel": "essencial",
       "confianca": "oficial"
     },
     {
@@ -4502,6 +4526,8 @@
         "pdf-sessp-hipoclorito-agua",
         "pdf-sesgo-cuidados-agua",
         "pdf-sesmg-nota-hipoclorito",
+        "pdf-univasf-moringa-agua",
+        "pdf-emdagro-moringa",
         "pdf-embrapa-cultivo-peixes",
         "pdf-embrapa-conservas-frutas",
         "pdf-ms-enchentes-como-agir",
